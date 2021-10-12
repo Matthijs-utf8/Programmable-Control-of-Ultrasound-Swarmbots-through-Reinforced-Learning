@@ -7,7 +7,7 @@ import preprocessing
 from tqdm import tqdm
 from settings import *
 
-
+this_is_a_test = 0
 
 # Action: 0 --> Relay_channel: 1 --> Out: Green --> Piezo: Right --> Move: Left
 # Action: 1 --> Relay_channel: 2 --> Out: Purple --> Piezo: Bottom --> Move: Up
@@ -15,8 +15,6 @@ from settings import *
 # Action: 3 --> Relay_channel: 4 --> Out: White --> Piezo: Top --> Move: Down
 
 
-
-# TODO --> Reduce latency
 def main():
 
     TARGET_COORD = TARGET_POINTS[0]
