@@ -1,18 +1,29 @@
 # Environment settings
-SAVE_DIR = "C:\\Users\\Matthijs\\PycharmProjects\\AI_actuated_microswarm_2\\Include\\snapshots\\Track_tests_friday\\"
-SERIAL_PORT_ARDUINO = "COM9"
+SAVE_DIR = "C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\snapshots\\"
+#for lab computer the arduino terminal is port 5
+SERIAL_PORT_ARDUINO = "COM5"
+# INSTR_DESCRIPTOR = 'USB0::0x0699::0x034F::C020081::INSTR'
+INSTR_DESCRIPTOR = None
 SERIAL_PORT_LEICA = "COM4"
 BAUDRATE = 115200
-STREAM_URL = "rtsp://10.4.51.109"
+# STREAM_URL = "rtsp://10.4.51.109"
 IMG_SIZE = 300
 OFFSET_BOUNDS = 10
 SLEEP_TIME = 0.03
-PIXEL_MULTIPLIER_LEFT_RIGHT = 60
-PIXEL_MULTIPLIER_UP_DOWN = 50
-TARGET_POINTS = [(0, 0)]
+PIXEL_MULTIPLIER_LEFT_RIGHT = 75
+PIXEL_MULTIPLIER_UP_DOWN = 85
+TARGET_POINTS = [(150, 150), (150, 150)]
+EXPOSURE_TIME = 25
+
+# PID
+PID_DISTANCE = 5
+MIN_VPP = 2
+MAX_VPP = 4
+MIN_FREQUENCY = 240
+MAX_FREQUENCY = 260
 
 # Run settings
-MAX_STEPS = 10000
+MAX_STEPS = 1
 EPISODES = 1
 UPDATE_VPP_EVERY = 10
 

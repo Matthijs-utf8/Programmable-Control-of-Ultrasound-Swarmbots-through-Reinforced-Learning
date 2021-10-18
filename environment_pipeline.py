@@ -2,7 +2,7 @@ import numpy as np
 from preprocessing import find_clusters, TrackClusters
 import cv2
 import datetime
-import vlc
+# import vlc
 import time
 import serial
 from settings import *
@@ -11,30 +11,68 @@ import binascii
 from collections import deque
 import settings
 import pyvisa as visa
+import pymmcore
+import tqdm
 
 
 class VideoStream:
 
-    def __init__(self, url=STREAM_URL):
+    def __init__(self):
 
-        # Define VLC instance
-        instance = vlc.Instance()
+        # Initialiye core object
+        self.core = pymmcore.CMMCore()
+        self.core.setDeviceAdapterSearchPaths(["C:/Program Files/Micro-Manager-2.0gamma"])
+        self.core.loadSystemConfiguration('C:/Program Files/Micro-Manager-2.0gamma/mmHamamatsu.cfg')
+        self.label = self.core.getCameraDevice()
+        self.core.setExposure(EXPOSURE_TIME)
+        self.core.prepareSequenceAcquisition(self.label)
+        self.core.startContinuousSequenceAcquisition(0.1)
+        self.core.initializeCircularBuffer()
+        time.sleep(1)
 
-        # Define VLC player
-        self.player = instance.media_player_new()
+    def normalize(self, arr, t_min, t_max):
+        norm_arr = []
+        diff = t_max - t_min
+        diff_arr = np.max(arr) - np.min(arr)
+        for i in arr:
+            temp = (((i - np.min(arr)) * diff) / diff_arr) + t_min
+            norm_arr.append(temp.tolist())
+        return np.array(norm_arr, dtype=np.uint8)
 
-        # Define VLC media
-        self.media = instance.media_new(url)
+    def snap(self, f_name, size=(IMG_SIZE, IMG_SIZE)):
 
-        # Set player media
-        self.player.set_media(self.media)
-        self.player.play()
-        time.sleep(2)
+        # Get image
+        img = self.core.getLastImage()
 
-    def snap(self, f_name):
+        # Resize image
+        img = cv2.resize(img, size)
 
-        # Snap an image of size (IMG_SIZE, IMG_SIZE)
-        self.player.video_take_snapshot(0, f_name, IMG_SIZE, IMG_SIZE)
+        # Save image
+        cv2.imwrite(f_name, img)
+
+        # Return image
+        return img
+
+    # def __init__(self, url=STREAM_URL):
+    #
+    #     # Define VLC instance
+    #     instance = vlc.Instance()
+    #
+    #     # Define VLC player
+    #     self.player = instance.media_player_new()
+    #
+    #     # Define VLC media
+    #     self.media = instance.media_new(url)
+    #
+    #     # Set player media
+    #     self.player.set_media(self.media)
+    #     self.player.play()
+    #     time.sleep(2)
+    #
+    # def snap(self, f_name):
+    #
+    #     # Snap an image of size (IMG_SIZE, IMG_SIZE)
+    #     self.player.video_take_snapshot(0, f_name, IMG_SIZE, IMG_SIZE)
 
 
 class Actuator:
@@ -65,11 +103,11 @@ class Observer:
 
         self.observer = serial.Serial(port=port, baudrate=9600, timeout=2)
         print(f"Opened port {port}: {self.observer.isOpen()}")
+        self.pos = (0, 0)
 
     def reset(self):
         self.observer.write(bytearray([255, 82]))  # Reset device
         time.sleep(2)  # Give the device time to reset before issuing new commands
-        self.pos = (0, 0)
 
     def close(self):
         self.observer.close()
@@ -211,8 +249,9 @@ class Observer:
 
 class FunctionGenerator:
 
-    def __init__(self, instrument_descriptor=None):
+    def __init__(self, instrument_descriptor=INSTR_DESCRIPTOR):
         rm = visa.ResourceManager()
+        print(rm.list_resources())
         if not instrument_descriptor:
             instrument_descriptor = rm.list_resources()[0]
         self.AFG3000 = rm.open_resource(instrument_descriptor)
@@ -244,6 +283,12 @@ class SwarmEnvTrackBiggestCluster:
         self.target_points = target_points
         self.target_idx = 0
 
+        self.memory = deque(maxlen=5)
+        self.now_memory = deque(maxlen=5)
+        self.vpp = MIN_VPP
+        self.frequency = MIN_FREQUENCY
+        self.max_dist = int(np.sqrt(2*(IMG_SIZE**2)))
+
     def reset(self):
 
         # Set env steps to 0
@@ -253,74 +298,116 @@ class SwarmEnvTrackBiggestCluster:
         self.tracker = TrackClusters()
 
         # Define file name
-        filename = SAVE_DIR + f"{str(round(time.time(), 3))}" \
+        self.now = round(time.time(), 3)
+        filename = SAVE_DIR + f"{str(self.now)}" \
                               f"-{0}{0}" \
                               f"-{self.target_points[self.target_idx][0]}{self.target_points[self.target_idx][1]}" \
                               f"-reset.png"
 
         # Snap a frame from the video stream and save
-        self.source.snap(f_name=filename)
+        img = self.source.snap(f_name=filename)
+        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE) # Still need to optimize this
 
         # Get the centroid of (biggest) swarm
-        self.state = self.tracker.reset(img=cv2.imread(filename, cv2.IMREAD_GRAYSCALE))
+        self.state = self.tracker.reset(img=img)
+        self.target_points[self.target_idx] = self.state ######################
 
         # Exception handling
         if not self.state:
             self.state = (0, 0)
+        self.memory.append(self.state)
 
-        self.observer.reset()  # TODO --> check if necessary
+        # self.observer.reset()  # TODO --> check if necessary
 
         # Return centroids of n amount of swarms
         return self.state
 
-    def env_step(self, action: int, vpp: float):
+    def map(self):
+        return
+
+    def check_state(self):
+
+        dist = np.linalg.norm( ( (self.state[0] - self.target_points[self.target_idx][0]), (self.state[1] - self.target_points[self.target_idx][1]) ) )
+        self.vpp = (dist / self.max_dist) * (MAX_VPP - MIN_VPP) + MIN_VPP
+        self.function_generator.set_vpp(vpp=self.vpp)
+
+        if self.memory > 1:
+            avg_dist = np.average([self.memory[i] - self.memory[i - 1] for n in range(len(self.memory) - 1)])
+            if avg_dist < PID_DISTANCE:
+                self.frequency += 1
+                if self.frequency > MAX_FREQUENCY:
+                    self.frequency = MIN_FREQUENCY
+                self.function_generator.set_frequency(frequency=self.frequenc*1000)
+                time.sleep(0.1)
+
+
+
+    def env_step(self, action: int, vpp: float, frequency: float):
 
         # Give action to piezos after setting correct vpp
-        self.function_generator.set_vpp(vpp=vpp)
+        self.check_state()
+
         self.actuator.move(action)
 
         # Define file name
-        filename = SAVE_DIR + f"{str(round(time.time(), 3))}" \
+        self.now = round(time.time(), 3)
+        self.now_memory.append(self.now)
+        filename = SAVE_DIR + f"{str(self.now)}" \
                               f"-{self.state[0]}{self.state[1]}" \
                               f"-{self.target_points[self.target_idx][0]}{self.target_points[self.target_idx][1]}" \
                               f"-{action}.png"
 
         # Snap a frame from the video stream
-        self.source.snap(f_name=filename)
+        img = self.source.snap(f_name=filename)
+        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE) # Still need to optimize this
 
         # Get the centroid of biggest swarm
-        self.state = self.tracker.update(img=cv2.imread(filename, cv2.IMREAD_GRAYSCALE),  # Read image
+        self.state = self.tracker.update(img=img,  # Read image
                                          target=self.target_points[self.target_idx],  # For verbose purposes
                                          verbose=True)
+
+        print(f'State {self.state}, Goal {self.target_points[self.target_idx]}')
 
         # Exception handling
         if not self.state:
             self.state = (0, 0)
+        self.memory.append(self.state)
 
         # Calculate offset and move microscope to next point if offset goes out of bounds
-        offset = np.linalg.norm((- (self.state[0] - self.target_points[self.target_idx][0]), (self.state[1] - self.target_points[self.target_idx][1])))
-        if offset < OFFSET_BOUNDS:
-            self.actuator.close()  # Stop piezos
-            old_target = self.target_points[self.target_idx]
-            self.target_idx += 1 % len(self.target_points)
-            new_target = self.target_points[self.target_idx]
-            offset_pixels = ( - (new_target[0] - old_target[0]), (new_target[1] - old_target[1]) )
-            self.observer.move_increment(offset_pixels=np.array(offset_pixels))
-
-            # Reset tracker
-            self.tracker.bbox = np.array(self.tracker.bbox) + np.array(offset_pixels)  # TODO --> Test if this works
+        # offset = np.linalg.norm((- (self.state[0] - self.target_points[self.target_idx][0]), (self.state[1] - self.target_points[self.target_idx][1])))
+        # if offset < OFFSET_BOUNDS:
+        #     self.actuator.close()  # Stop piezos
+        #     old_target = self.target_points[self.target_idx]
+        #     self.target_idx = (self.target_idx + 1) % (len(self.target_points))
+        #     new_target = self.target_points[self.target_idx]
+        #     offset_pixels = ( (new_target[0] - old_target[0]), (new_target[1] - old_target[1]) )
+        #     self.observer.move_increment(offset_pixels=np.array(offset_pixels))
+        #
+        #     # Update tracker position according to out movement
+        #     # self.tracker.bbox[0], self.tracker.bbox[1] = new_target[0], new_target[1]
+        #
+        #     self.tracker.reset(img=img,
+        #                        bbox=(int(new_target[0]-0.5*self.tracker.bbox[2]),
+        #                              int(new_target[1]-0.5*self.tracker.bbox[3]),
+        #                              self.tracker.bbox[2],
+        #                              self.tracker.bbox[3]))
 
         # Add step
         self.step += 1
-
-
 
         # Return centroids of n amount of swarms
         return self.state
 
     def close(self):
+        print(f'Final state: {self.state}')
         self.actuator.close()
         self.observer.close()
-        self.source.player.stop()
+
+
+if __name__ == '__main__':
+
+    fg = FunctionGenerator()
+    fg.set_frequency(frequency=240e3)
+    # fg.set_vpp(vpp=2.1)
 
 

@@ -2,7 +2,7 @@ import cv2
 from operator import itemgetter
 import numpy as np
 from settings import *
-
+import matplotlib.pyplot as plt
 
 # Find the indices of the top n values from a list or array quickly
 def find_top_n_indices(data, top):
@@ -21,10 +21,6 @@ def find_clusters(image, amount_of_clusters, verbose=False):
 
     # Check if image is grayscale
     assert len(image.shape) == 2, "Image must be grayscale"
-
-    # hist = cv2.calcHist([image], [0], None, [256], [0, 256])
-    # plt.plot(hist)
-    # plt.show()
 
     # Using cv2.blur() method
     cleared_image = cv2.blur(cv2.threshold(image, 130, 255, cv2.THRESH_BINARY)[1], (2, 2)) # TODO --> Automatic threshold settings
@@ -64,10 +60,10 @@ def find_clusters(image, amount_of_clusters, verbose=False):
         areas.append(area)
         squared_area = np.sqrt(area)
         # bboxes.append(cv2.boundingRect(contours[n]))
-        bboxes.append((int(cX-squared_area),
+        bboxes.append([int(cX-squared_area),
                        int(cY-squared_area),
                        int(2*squared_area),
-                       int(2*squared_area)))
+                       int(2*squared_area)])
 
 
     # if verbose:
@@ -93,7 +89,7 @@ def find_clusters(image, amount_of_clusters, verbose=False):
 
     # print(centroids, areas, bboxes)
 
-    return centroids, areas, bboxes
+    return centroids, areas, bboxes[0]
 
 
 class TrackClusters:
@@ -112,17 +108,16 @@ class TrackClusters:
 
         if not self.bbox:
             self.bbox = (0, 0, IMG_SIZE, IMG_SIZE)
-        else:
-            self.bbox = self.bbox[0]
 
         # Define tracker and initialise
         self.tracker = cv2.TrackerCSRT_create()  # Very accurate, dynamic sizing, not the fastest, still okay
+        # self.tracker = cv2.TrackerKCF_create()
         # self.tracker = cv2.legacy_TrackerMedianFlow.create()  # Very fast, dynamic sizing, medium accuracy
 
         self.ok = self.tracker.init(img, self.bbox)
 
         # Calculate center of bounding box
-        self.center = (int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3]))
+        self.center = [int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3])]
 
         return self.center
 
@@ -130,7 +125,8 @@ class TrackClusters:
 
         # Perform tracker update and calculate new center
         self.ok, self.bbox = self.tracker.update(img)
-        self.center = (int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3]))
+        self.bbox = list(self.bbox)
+        self.center = [int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3])]
         # else:
         #     self.reset(img)
 
@@ -155,9 +151,10 @@ class TrackClusters:
             cv2.imshow("Tracking", img)
 
             # Exit if ESC pressed
-            k = cv2.waitKey(1) & 0xff
-            if k == 27:
-                return
+            cv2.waitKey(0)
+            # k = cv2.waitKey(1) & 0xff
+            # if k == 27:
+            #     return
 
         return self.center
 

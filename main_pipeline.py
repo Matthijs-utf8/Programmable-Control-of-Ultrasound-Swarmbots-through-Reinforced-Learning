@@ -20,7 +20,7 @@ def main():
 
     # Initiate environment and action model
     env = SwarmEnvTrackBiggestCluster()
-    pid = PID()
+    # pid = PID()
     model = walk_to_pixel
 
     # Loop through episodes
@@ -32,8 +32,13 @@ def main():
         # Loop through steps
         for i in tqdm(range(MAX_STEPS)):
 
+            print(env.tracker.bbox)
+
             action = action_map[model(state, target_pos=TARGET_COORD)]
-            state = env.env_step(action)
+            state = env.env_step(action, vpp=0.1, frequency=240e3)
+
+            print(env.tracker.bbox)
+            print('_________')
 
     env.close()
 
