@@ -1,2 +1,5 @@
 
 test.py
+*.csv
+make_visuals.py
+neural_net_motion_predict.py

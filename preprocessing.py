@@ -23,7 +23,7 @@ def find_clusters(image, amount_of_clusters, verbose=False):
     assert len(image.shape) == 2, "Image must be grayscale"
 
     # Using cv2.blur() method
-    cleared_image = cv2.blur(cv2.threshold(image, 130, 255, cv2.THRESH_BINARY)[1], (2, 2)) # TODO --> Automatic threshold settings
+    cleared_image = cv2.blur(cv2.threshold(image, 130, 255, cv2.THRESH_BINARY)[1], (2, 2))  # TODO --> Automatic threshold settings
 
     # Separate clusters from background and convert background to black
     canny = cv2.Canny(cleared_image, threshold1=0, threshold2=0)
@@ -94,18 +94,14 @@ def find_clusters(image, amount_of_clusters, verbose=False):
 
 class TrackClusters:
 
-    def __init__(self):
-        pass
+    def __init__(self, bbox=None):
+        self.bbox = bbox
 
-    def reset(self, img, bbox=None):
+    def reset(self, img):
 
         # Check if we specified a bounding box to start with, otherwise select largest cluster
-        if bbox:
-            self.bbox = bbox
-        else:
-            # Find largest cluster and define bounding box
+        if not self.bbox:
             _, _, self.bbox = find_clusters(image=img, amount_of_clusters=1, verbose=False)
-
         if not self.bbox:
             self.bbox = (0, 0, IMG_SIZE, IMG_SIZE)
 
@@ -119,7 +115,7 @@ class TrackClusters:
         # Calculate center of bounding box
         self.center = [int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3])]
 
-        return self.center
+        return self.center, self.bbox[2]
 
     def update(self, img, target: tuple, verbose: bool=False):
 
@@ -127,8 +123,6 @@ class TrackClusters:
         self.ok, self.bbox = self.tracker.update(img)
         self.bbox = list(self.bbox)
         self.center = [int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3])]
-        # else:
-        #     self.reset(img)
 
         if verbose:
 
@@ -156,6 +150,6 @@ class TrackClusters:
             # if k == 27:
             #     return
 
-        return self.center
+        return self.center, self.bbox[2]
 
 

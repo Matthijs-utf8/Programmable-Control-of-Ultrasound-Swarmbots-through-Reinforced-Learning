@@ -1,5 +1,5 @@
 import numpy as np
-from preprocessing import find_clusters, TrackClusters
+from preprocessing import TrackClusters
 import cv2
 import datetime
 # import vlc
@@ -13,6 +13,7 @@ import settings
 import pyvisa as visa
 import pymmcore
 import tqdm
+import pandas as pd
 
 
 class VideoStream:
@@ -21,23 +22,20 @@ class VideoStream:
 
         # Initialiye core object
         self.core = pymmcore.CMMCore()
+
+        # Find camera config --> get camera
         self.core.setDeviceAdapterSearchPaths(["C:/Program Files/Micro-Manager-2.0gamma"])
         self.core.loadSystemConfiguration('C:/Program Files/Micro-Manager-2.0gamma/mmHamamatsu.cfg')
         self.label = self.core.getCameraDevice()
+
+        # Set exposure time
         self.core.setExposure(EXPOSURE_TIME)
+
+        # Prepare acquisition
         self.core.prepareSequenceAcquisition(self.label)
         self.core.startContinuousSequenceAcquisition(0.1)
         self.core.initializeCircularBuffer()
         time.sleep(1)
-
-    def normalize(self, arr, t_min, t_max):
-        norm_arr = []
-        diff = t_max - t_min
-        diff_arr = np.max(arr) - np.min(arr)
-        for i in arr:
-            temp = (((i - np.min(arr)) * diff) / diff_arr) + t_min
-            norm_arr.append(temp.tolist())
-        return np.array(norm_arr, dtype=np.uint8)
 
     def snap(self, f_name, size=(IMG_SIZE, IMG_SIZE)):
 
@@ -257,11 +255,15 @@ class FunctionGenerator:
         self.AFG3000 = rm.open_resource(instrument_descriptor)
         self.AFG3000.write('*RST')  # reset AFG
 
+    def reset(self):
+        self.set_vpp(vpp=MIN_VPP)
+        self.set_frequency(frequency=MIN_FREQUENCY)
+
     def set_vpp(self, vpp: float):
         self.AFG3000.write(f'source1:voltage:amplitude {vpp}')  # Set vpp
 
     def set_frequency(self, frequency: float):
-        self.AFG3000.write(f'source1:Frequency {frequency}')  # Set frequency
+        self.AFG3000.write(f'source1:Frequency {frequency*1000}')  # Set frequency
 
 
 class SwarmEnvTrackBiggestCluster:
@@ -271,7 +273,8 @@ class SwarmEnvTrackBiggestCluster:
                  actuator=Actuator(),
                  observer=Observer(),
                  function_generator=FunctionGenerator(),
-                 target_points=TARGET_POINTS):
+                 target_points=TARGET_POINTS,
+                 metadata=METADATA):
 
         # Initialize devices
         self.source = source  # Camera
@@ -283,41 +286,59 @@ class SwarmEnvTrackBiggestCluster:
         self.target_points = target_points
         self.target_idx = 0
 
-        self.memory = deque(maxlen=5)
-        self.now_memory = deque(maxlen=5)
-        self.vpp = MIN_VPP
-        self.frequency = MIN_FREQUENCY
-        self.max_dist = int(np.sqrt(2*(IMG_SIZE**2)))
+        # Metadatastructure
+        self.metadata = metadata
 
-    def reset(self):
+        # Initialize Vpp and frequency
+        self.function_generator.reset()
+        self.vpp = MIN_VPP
+        self.frequency = MIN_FREQUENCY  # kHz
+
+        # Initialize memory
+        self.memory = deque(maxlen=5)
+
+    def reset(self, bbox):
 
         # Set env steps to 0
         self.step = 0
 
         # Initialize tracking algorithm
-        self.tracker = TrackClusters()
+        self.tracker = TrackClusters(bbox=bbox)
+
+        # Initialize function generator
+        self.function_generator.reset()
+
+        # Get time
+        self.now = round(time.time(), 3)
 
         # Define file name
-        self.now = round(time.time(), 3)
-        filename = SAVE_DIR + f"{str(self.now)}" \
-                              f"-{0}{0}" \
-                              f"-{self.target_points[self.target_idx][0]}{self.target_points[self.target_idx][1]}" \
-                              f"-reset.png"
+        filename = SAVE_DIR + f"reset.png"
 
         # Snap a frame from the video stream and save
         img = self.source.snap(f_name=filename)
-        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE) # Still need to optimize this
+        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # Still need to optimize this
 
         # Get the centroid of (biggest) swarm
-        self.state = self.tracker.reset(img=img)
-        self.target_points[self.target_idx] = self.state ######################
+        self.state, self.size = self.tracker.reset(img=img)
 
         # Exception handling
         if not self.state:
             self.state = (0, 0)
-        self.memory.append(self.state)
 
-        # self.observer.reset()  # TODO --> check if necessary
+        # Add metadata to dataframe
+        self.metadata.append(
+          {"Filename": filename,
+           "Time": self.now,
+           "Delta_time": None,
+           "Vpp": self.vpp,
+           "Frequency": self.frequency,
+           "Size": self.size,
+           "Action": None,
+           "Pos(t)": self.state,
+           "Pos(t-dt)": None,
+           "Target": self.target_points[self.target_idx],
+           "Step": 0}
+        )
 
         # Return centroids of n amount of swarms
         return self.state
@@ -325,58 +346,72 @@ class SwarmEnvTrackBiggestCluster:
     def map(self):
         return
 
-    def check_state(self):
+    # TODO --> Incorporate PID function from model.py
+    def set_vpp_and_frequency(self, dist_from_target):
 
-        dist = np.linalg.norm( ( (self.state[0] - self.target_points[self.target_idx][0]), (self.state[1] - self.target_points[self.target_idx][1]) ) )
-        self.vpp = (dist / self.max_dist) * (MAX_VPP - MIN_VPP) + MIN_VPP
+        # Set Vpp based on distance from target
+        self.vpp = (dist_from_target / IMG_SIZE) * (MAX_VPP - MIN_VPP) + MIN_VPP
         self.function_generator.set_vpp(vpp=self.vpp)
 
+        # Set frequency if we don't move at a certain speed
         if self.memory > 1:
-            avg_dist = np.average([self.memory[i] - self.memory[i - 1] for n in range(len(self.memory) - 1)])
-            if avg_dist < PID_DISTANCE:
+            if np.average(self.memory) < THRESHOLD_SPEED:
                 self.frequency += 1
                 if self.frequency > MAX_FREQUENCY:
                     self.frequency = MIN_FREQUENCY
-                self.function_generator.set_frequency(frequency=self.frequenc*1000)
-                time.sleep(0.1)
+                self.function_generator.set_frequency(frequency=self.frequency)
+                time.sleep(0.1)  # TODO --> Optimize
 
+    def env_step(self, action: int):
 
+        # Calculate vpp and frequency
+        dist_from_target = np.linalg.norm(np.array(self.state) - np.array(self.target_points[self.target_idx]))
+        self.set_vpp_and_frequency(dist_from_target=dist_from_target)
 
-    def env_step(self, action: int, vpp: float, frequency: float):
-
-        # Give action to piezos after setting correct vpp
-        self.check_state()
-
+        # Actuate piezos
         self.actuator.move(action)
 
-        # Define file name
+        # Get time
         self.now = round(time.time(), 3)
-        self.now_memory.append(self.now)
-        filename = SAVE_DIR + f"{str(self.now)}" \
-                              f"-{self.state[0]}{self.state[1]}" \
-                              f"-{self.target_points[self.target_idx][0]}{self.target_points[self.target_idx][1]}" \
-                              f"-{action}.png"
+
+        # Define file name
+        filename = SAVE_DIR + f"{self.now}.png"
 
         # Snap a frame from the video stream
         img = self.source.snap(f_name=filename)
         img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE) # Still need to optimize this
 
-        # Get the centroid of biggest swarm
-        self.state = self.tracker.update(img=img,  # Read image
-                                         target=self.target_points[self.target_idx],  # For verbose purposes
-                                         verbose=True)
-
-        print(f'State {self.state}, Goal {self.target_points[self.target_idx]}')
-
+        # Get the new state
+        old_state = self.state  # Copy old state
+        self.state, self.size = self.tracker.update(img=img,  # Read image
+                                                    target=self.target_points[self.target_idx],  # For verbose purposes
+                                                    verbose=True)
         # Exception handling
         if not self.state:
             self.state = (0, 0)
-        self.memory.append(self.state)
 
-        # Calculate offset and move microscope to next point if offset goes out of bounds
-        # offset = np.linalg.norm((- (self.state[0] - self.target_points[self.target_idx][0]), (self.state[1] - self.target_points[self.target_idx][1])))
-        # if offset < OFFSET_BOUNDS:
-        #     self.actuator.close()  # Stop piezos
+        # Add distance traveled to memory
+        self.memory.append(np.linalg.norm(np.array(old_state) - np.array(self.state)))
+
+        # Add metadata to dataframe
+        self.metadata.append(
+          {"Filename": filename,
+           "Time": self.now,
+           "Vpp": self.vpp,
+           "Frequency": self.frequency,
+           "Size": self.size,
+           "Action": action,
+           "State": self.state,
+           "Target": self.target_points[self.target_idx],
+           "Step": self.step}
+        )
+
+        # # Move microscope to next point if offset goes into bounds
+        # if dist_from_target < OFFSET_BOUNDS:
+        #
+        #     # Stop piezos
+        #     self.actuator.close()
+        #
         #     old_target = self.target_points[self.target_idx]
         #     self.target_idx = (self.target_idx + 1) % (len(self.target_points))
         #     new_target = self.target_points[self.target_idx]
@@ -385,6 +420,16 @@ class SwarmEnvTrackBiggestCluster:
         #
         #     # Update tracker position according to out movement
         #     # self.tracker.bbox[0], self.tracker.bbox[1] = new_target[0], new_target[1]
+        #
+        #     # Get time
+        #     self.now = round(time.time(), 3)
+        #
+        #     # Define file name
+        #     filename = SAVE_DIR + f"{self.now}.png"
+        #
+        #     # Snap a frame from the video stream
+        #     img = self.source.snap(f_name=filename)
+        #     img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # Still need to optimize this
         #
         #     self.tracker.reset(img=img,
         #                        bbox=(int(new_target[0]-0.5*self.tracker.bbox[2]),
@@ -399,7 +444,7 @@ class SwarmEnvTrackBiggestCluster:
         return self.state
 
     def close(self):
-        print(f'Final state: {self.state}')
+        print(f'Final bbox: {self.tracker.bbox}')
         self.actuator.close()
         self.observer.close()
 
