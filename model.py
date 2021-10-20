@@ -85,6 +85,45 @@ def initial_actions(action_length=40):
     action_list = np.append(action_list, np.array([[1, 3]]).repeat(int(action_length/2), 0)).tolist()
     return action_list
 
+# TODO --> Test if absolute or relative state works best, or if euclidean distance is better
+def predict_state(Vpp: float, frequency: int, size: int, model) -> tuple:
+    """
+    Calculate and return predicted state some time in the future, depending on the model.
+    :param Vpp: Voltage of function generator
+    :param frequency: Frequency of function generator
+    :param size: Size of swarm (width or height of the bounding box)
+    :return: Predicted magnitude of motion between 0 and 1 (1 representing the maximum of 300 pixels of movement)
+    """
+    return model.predict(np.array([[Vpp/MAX_VPP, frequency/MAX_FREQUENCY, size/SIZE_NORMALIZING_FACTOR]][0]))
+
+def get_action(size: int, offset_to_target: tuple):
+    """
+    Calculate best vpp and frequency for a given size of swarm and distance to target
+    Calculate best piezo to actuate
+    :param size: Size of swarm
+    :param offset_to_target: (x, y) offset to target
+    :return: Vpp, frequency and choice of piezo
+    """
+
+    # Generate potential combinations of inputs to the model
+    steps = [[Vpp, frequency, size] for Vpp in np.linspace(MIN_VPP, MAX_VPP, int((MAX_VPP - MIN_VPP) / VPP_STEP_SIZE + 1)) for frequency in np.linspace(MIN_FREQUENCY, MAX_FREQUENCY, int((MAX_FREQUENCY - MIN_FREQUENCY) / FREQUENCY_STEP_SIZE + 1))]
+
+    # Map all combinations to model to get the predicted motion
+    results = np.array(list(map(predict_state, steps)))  # TODO --> Optimize
+
+    # Find the Vpp and frequency that belong to the best inputs
+    # 'Best' is defined as the input that brings the robot closest to the target in either the x or y direction
+    Vpp, frequency, size = steps[np.abs(results - np.max(np.abs(offset_to_target))).argmin()]
+
+    # Choose one of four piezos
+    # IMPORTANT --> 0: dx > 0 (move left), 1: dy > 0 (move up), 2: dx < 0 (move right), 3: dy < 0 (move down)
+    action = np.argmax(np.abs(offset_to_target))
+    if np.sign(offset_to_target[action]) == -1:
+        action += 2
+
+    return action, Vpp, frequency
+
+
 def walk_to_pixel(blob_pos, target_pos):
 
     if not blob_pos:
@@ -99,74 +138,6 @@ def walk_to_pixel(blob_pos, target_pos):
 
     return action
 
-
-def average_centroid_correction(centroids, areas, target_pos=None):
-
-    """
-    Correct location of swarm centroids based on their average location and outliers
-    :param centroids: Location of n number of centroids
-    :return: action --> range(0, 4)
-    Setup: Incoming images are not mirrored!
-    Action: 0 --> Relay_channel: 1 --> Out: Green --> Piezo: Bottom --> Move: Up
-    Action: 1 --> Relay_channel: 2 --> Out: Purple --> Piezo: Right --> Move: Left
-    Action: 2 --> Relay_channel: 3 --> Out: Blue --> Piezo: Top --> Move: Down
-    Action: 3 --> Relay_channel: 4 --> Out: White --> Piezo: Left --> Move: Right
-    """
-
-    if np.any(centroids):
-
-        # If we want to move to a specific coordinate
-        if target_pos:
-            # print(target_pos)
-            medians = target_pos
-
-        # Else, cluster towards the median coordinate
-        else:
-            # Calculate median to find the reference coordinates
-            medians = np.min(centroids, axis=0) + (np.max(centroids, axis=0) - np.min(centroids, axis=0)) / 2
-
-        # print(medians)
-        # Calculate the weighted average of the centroids
-        averages = np.average(centroids, axis=0, weights=areas)  # Make this a weighted average
-        # print(averages)
-        # Calculate offsets from the reference
-        offsets = - np.subtract(medians[0], averages[0]), - np.subtract(medians[1], averages[1])
-        # print(offsets)
-        # Get the largest offset and compute action
-        action = np.argmax(np.abs(offsets))
-        if np.sign(offsets[action]) == -1:
-            action += 2
-
-    # If centroids are all located at [0, 0], no centroids were found
-    else:
-        print("No centroids found. Chose random action")
-        action = random_action()
-
-    return action
-
 if __name__ == "__main__":
 
-    np.random.seed(0)
-    nr_of_blobs = 5
-    img_size = 15
-    target_pos = [0, 8]
-    centroids = np.random.randint(0, img_size, (nr_of_blobs, 2))
-    # print(centroids)
-    # areas = np.random.randint(10, 50, (nr_of_blobs,))
-    areas = np.ones(nr_of_blobs,)
-    blank = np.zeros((img_size, img_size, 3))
-
-    for blob_pos in centroids:
-        # print(blob_pos)
-        blank[blob_pos[0], blob_pos[1]] = 255, 255, 255
-
-    plt.imshow(blank)
-    plt.show()
-
-
-
-    test = average_centroid_correction(centroids=centroids,
-                                       areas=areas,
-                                       target_pos=target_pos)
-
-    print(test)
+    get_action(100, (-50, -20))

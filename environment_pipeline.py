@@ -14,6 +14,7 @@ import pyvisa as visa
 import pymmcore
 import tqdm
 import pandas as pd
+from model import get_action
 
 
 class VideoStream:
@@ -367,6 +368,12 @@ class SwarmEnvTrackBiggestCluster:
         # Calculate vpp and frequency
         dist_from_target = np.linalg.norm(np.array(self.state) - np.array(self.target_points[self.target_idx]))
         self.set_vpp_and_frequency(dist_from_target=dist_from_target)
+
+        # Deep learning model code
+        # offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
+        # action, self.vpp, self.frequency = get_action(size=self.size, offset_to_target=offset)
+        # self.function_generator.set_vpp(self.vpp)
+        # self.function_generator.set_frequency(self.frequency)
 
         # Actuate piezos
         self.actuator.move(action)

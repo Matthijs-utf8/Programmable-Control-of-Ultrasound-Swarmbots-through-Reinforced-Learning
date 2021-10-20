@@ -5,10 +5,10 @@ from settings import *
 import tqdm
 import os
 import model
+import tensorflow as tf
 
-test = 0
-qlefwekfn = 0
-qwbfkwefb = 0
+nnet_path = "C:\\Users\\Matthijs\\PycharmProjects\\AI_Actuated_Microswarm_4\\model4"
+nnet = tf.keras.models.load_model(nnet_path)
 
 action_map = {0: "Move left", 1: "Move up", 2: "Move right", 3: "Move down", None: None}
 RUN_DIR = "good_run_1"
@@ -129,6 +129,7 @@ class TrackClusters:
         # Calculate center of bounding box
         self.center = (int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3]))
         self.centers = [self.center]
+        self.predictions = [self.center]
 
         return self.center
 
@@ -137,8 +138,11 @@ class TrackClusters:
 
         # Perform tracker update and calculate new center
         self.ok, self.bbox = self.tracker.update(img)
+        self.predictions.append(tuple(np.array(nnet.predict(np.array(np.array((action/3, self.centers[-1][0]/300, self.centers[-1][1]/300))[np.newaxis, :])) * 300)[0].tolist()))
+        # print(self.predictions)
         self.center = (int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3]))
         self.centers.append(self.center)
+
 
         image = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
 
@@ -151,10 +155,12 @@ class TrackClusters:
                 p1 = (int(self.bbox[0]), int(self.bbox[1]))
                 p2 = (int(self.bbox[0] + self.bbox[2]), int(self.bbox[1] + self.bbox[3]))
                 cv2.rectangle(image, p1, p2, (255, 128, 0))
-                cv2.circle(image, TARGET_COORD, 0, (178, 255, 102), 5)
+                cv2.circle(image, (150, 150), 0, (178, 255, 102), 5)
                 cv2.putText(image, f"{action_map[action]}", (80, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
                 for center in self.centers:
                     cv2.circle(image, center, 0, (255, 255, 102), 2)
+                for pred in self.predictions:
+                    cv2.circle(image, (round(pred[0]), round(pred[1])), 0, (102, 255, 255), 2)
 
             else:
 
@@ -164,12 +170,12 @@ class TrackClusters:
 
             # Display result
             # cv2.imwrite(f"C:\\Users\\Matthijs\\PycharmProjects\\AI_actuated_microswarm_2\\Include\\Visuals\\{RUN_DIR}\\{len(self.centers)}.png", image)
-            # cv2.imshow("Tracking", image)
-            #
-            # # Exit if ESC pressed
-            # k = cv2.waitKey(1) & 0xff
-            # if k == 27:
-            #     return
+            cv2.imshow("Tracking", image)
+
+            # Exit if ESC pressed
+            k = cv2.waitKey(1) & 0xff
+            if k == 27:
+                return
 
         return self.center
 
@@ -181,8 +187,8 @@ if __name__ == "__main__":
     import time
     t0 = time.time()
 
-    pid = model.PID()
-    pid.setPoint(set_point=TARGET_COORD[0])
+    # pid = model.PID()
+    # pid.setPoint(set_point=TARGET_COORD[0])
 
     t0 = time.time()
     cluster_tracker = TrackClusters()
