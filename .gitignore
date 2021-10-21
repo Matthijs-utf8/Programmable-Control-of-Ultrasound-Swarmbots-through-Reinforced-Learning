@@ -7,3 +7,4 @@ test_piezos.py
 make_visuals.py
 make_visuals_2.py
 build_model.py
+__pycache__
