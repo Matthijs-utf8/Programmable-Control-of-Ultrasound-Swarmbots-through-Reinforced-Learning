@@ -5,7 +5,7 @@ from pynput import keyboard
 import datetime
 
 # Initiate contact with arduino
-arduino = serial.Serial(port=SERIAL_PORT_ARDUINO, baudrate=BAUDRATE)
+arduino = serial.Serial(port=SERIAL_PORT_ARDUINO, baudrate=BAUDRATE_ARDUINO)
 print(arduino.readline().decode())
 time.sleep(1)  # give serial communication time to establish
 

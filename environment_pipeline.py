@@ -2,7 +2,7 @@ import numpy as np
 from preprocessing import TrackClusters
 import cv2
 import datetime
-# import vlc
+import vlc
 import time
 import serial
 from settings import *
@@ -17,7 +17,7 @@ import pandas as pd
 from model import get_action
 
 
-class VideoStream:
+class VideoStreamHammamatsu:
 
     def __init__(self):
 
@@ -40,8 +40,8 @@ class VideoStream:
 
     def snap(self, f_name, size=(IMG_SIZE, IMG_SIZE)):
 
+        # Error handling (sometimes the video buffer is empty if we take super fast images)
         img = None
-
         while not np.any(img):
             try:
                 # Get image
@@ -58,34 +58,37 @@ class VideoStream:
         # Return image
         return img
 
-    # def __init__(self, url=STREAM_URL):
-    #
-    #     # Define VLC instance
-    #     instance = vlc.Instance()
-    #
-    #     # Define VLC player
-    #     self.player = instance.media_player_new()
-    #
-    #     # Define VLC media
-    #     self.media = instance.media_new(url)
-    #
-    #     # Set player media
-    #     self.player.set_media(self.media)
-    #     self.player.play()
-    #     time.sleep(2)
-    #
-    # def snap(self, f_name):
-    #
-    #     # Snap an image of size (IMG_SIZE, IMG_SIZE)
-    #     self.player.video_take_snapshot(0, f_name, IMG_SIZE, IMG_SIZE)
+
+class VideoStreamKronos:
+
+    def __init__(self, url=STREAM_URL):
+
+        # Define VLC instance
+        instance = vlc.Instance()
+
+        # Define VLC player
+        self.player = instance.media_player_new()
+
+        # Define VLC media
+        self.media = instance.media_new(url)
+
+        # Set player media
+        self.player.set_media(self.media)
+        self.player.play()
+        time.sleep(2)
+
+    def snap(self, f_name):
+
+        # Snap an image of size (IMG_SIZE, IMG_SIZE)
+        self.player.video_take_snapshot(0, f_name, IMG_SIZE, IMG_SIZE)
 
 
-class Actuator:
+class ActuatorPiezos:
 
     def __init__(self):
 
         # Initiate contact with arduino
-        self.arduino = serial.Serial(port=SERIAL_PORT_ARDUINO, baudrate=BAUDRATE)
+        self.arduino = serial.Serial(port=SERIAL_PORT_ARDUINO, baudrate=BAUDRATE_ARDUINO)
         print(f"Arduino: {self.arduino.readline().decode()}")
         time.sleep(1)  # give serial communication time to establish
 
@@ -105,13 +108,16 @@ class Actuator:
         self.arduino.write(b"9")
 
 
-class Observer:
+class TranslatorLeica:
 
     def __init__(self, port=SERIAL_PORT_LEICA):
 
-        self.observer = serial.Serial(port=port, baudrate=9600, timeout=2)
+        # Open Leica
+        self.observer = serial.Serial(port=port,
+                                      baudrate=BAUDRATE_LEICA,  # Baudrate has to be 9600
+                                      timeout=2)  # 2 seconds timeout recommended by the manual
         print(f"Opened port {port}: {self.observer.isOpen()}")
-        self.pos = (0, 0)
+        self.pos = (0, 0)  # Reset position to (0, 0)
 
     def reset(self):
         self.observer.write(bytearray([255, 82]))  # Reset device
@@ -127,15 +133,13 @@ class Observer:
         received = self.observer.read(1)  # Read response (1 byte)
         if received:
             print(f"Received: {received.decode()}")  # Print received message byte
+        time.sleep(SLEEP_TIME)
 
     def write_target_pos(self, motor: int, target_pos: int):
 
         # Translate coordinate to a 3-byte message
         msg = self.coord_to_msg(int(target_pos))
-        # print(f"Writing target pos bytes: {msg} to motor {motor}")
-
-        # [device number, command, 3, message, stop signal]
-        self.observer.write(bytearray([motor, 84, 3, msg[0], msg[1], msg[2], 58]))
+        self.observer.write(bytearray([motor, 84, 3, msg[0], msg[1], msg[2], 58]))  # [device number, command, 3, message, stop signal]
         time.sleep(SLEEP_TIME)
 
     def get_motor_pos(self, motor):
@@ -160,7 +164,6 @@ class Observer:
 
         # Return translated message
         translated = self.msg_to_coord(received)
-        # print(f"Motor pos: {translated}")  # Print received message as coordinate
         time.sleep(SLEEP_TIME)
 
         return translated
@@ -187,7 +190,6 @@ class Observer:
 
         # Return translated message
         translated = self.msg_to_coord(received)
-        # print(f"Target pos: {translated}")  # Print received message as coordinate
         time.sleep(SLEEP_TIME)
 
         return translated
@@ -258,12 +260,11 @@ class Observer:
 class FunctionGenerator:
 
     def __init__(self, instrument_descriptor=INSTR_DESCRIPTOR):
-        rm = visa.ResourceManager()
-        # print(rm.list_resources())
+        rm = visa.ResourceManager()  # Open resource manager
         if not instrument_descriptor:
-            instrument_descriptor = rm.list_resources()[-1]
+            instrument_descriptor = rm.list_resources()[-1]  # TODO --> Automate this to not be hardcoded
         self.AFG3000 = rm.open_resource(instrument_descriptor)
-        # self.AFG3000.write('*RST')  # reset AFG
+        # self.AFG3000.write('*RST')  # Reset AFG
 
     def reset(self):
         self.set_vpp(vpp=MIN_VPP)
@@ -273,15 +274,15 @@ class FunctionGenerator:
         self.AFG3000.write(f'source1:voltage:amplitude {vpp}')  # Set vpp
 
     def set_frequency(self, frequency: float):
-        self.AFG3000.write(f'source1:Frequency {frequency*1000}')  # Set frequency
+        self.AFG3000.write(f'source1:Frequency {frequency*1000}')  # Set frequency (in kHz)
 
 
 class SwarmEnvTrackBiggestCluster:
 
     def __init__(self,
-                 source=VideoStream(),
-                 actuator=Actuator(),
-                 observer=Observer(),
+                 source=VideoStreamHammamatsu(),
+                 actuator=ActuatorPiezos(),
+                 translator=TranslatorLeica(),
                  function_generator=FunctionGenerator(),
                  target_points=TARGET_POINTS,
                  metadata=METADATA):
@@ -289,21 +290,20 @@ class SwarmEnvTrackBiggestCluster:
         # Initialize devices
         self.source = source  # Camera
         self.actuator = actuator  # Piezo's
-        self.observer = observer  # Leica xy-platform
+        self.translator = translator  # Leica xy-platform
         self.function_generator = function_generator  # Function generator
+
+        # Metadatastructure
+        self.metadata = metadata
+
+        # Initialize Vpp and frequency to their minima
+        self.function_generator.reset()
+        self.vpp = MIN_VPP
+        self.frequency = MIN_FREQUENCY  # kHz
 
         # Keep track of target point (idx in target_points)
         self.target_points = target_points
         self.target_idx = 0
-
-        # Metadatastructure
-        self.metadata = metadata
-        # self.metadata = self.metadata.set_index('Time')
-
-        # Initialize Vpp and frequency
-        self.function_generator.reset()
-        self.vpp = MIN_VPP
-        self.frequency = MIN_FREQUENCY  # kHz
 
         # Initialize memory
         self.memory = deque(maxlen=10)
@@ -358,7 +358,7 @@ class SwarmEnvTrackBiggestCluster:
     def map(self):
         return
 
-    # TODO --> Incorporate PID function from model.py
+    # TODO --> Improve capability of PID
     def set_vpp_and_frequency(self, dist_from_target):
 
         # Set Vpp based on distance from target
@@ -376,9 +376,10 @@ class SwarmEnvTrackBiggestCluster:
 
     def env_step(self, action: int):
 
-
+        # Calculate distance from target position
         dist_from_target = np.linalg.norm(np.array(self.state) - np.array(self.target_points[self.target_idx]))
 
+        # Only update function generator and arduino every UPDATE_ENV_EVERY steps
         if not self.step % UPDATE_ENV_EVERY:
 
             # Calculate vpp and frequency
@@ -400,20 +401,19 @@ class SwarmEnvTrackBiggestCluster:
         filename = SAVE_DIR + f"{self.now}.png"
 
         # Snap a frame from the video stream
-        img = self.source.snap(f_name=filename)
-        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE) # Still need to optimize this
+        self.source.snap(f_name=filename)
+        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # TODO --> Get rid of double imwrite/imread in source.snap and this line
 
         # Get the new state
-        old_state = self.state  # Copy old state
         self.state, self.size = self.tracker.update(img=img,  # Read image
                                                     target=self.target_points[self.target_idx],  # For verbose purposes
-                                                    verbose=True)
+                                                    verbose=True)  # Show live tracking
         # Exception handling
         if not self.state:
             self.state = (0, 0)
 
         # Add distance traveled to memory
-        self.memory.append(np.linalg.norm(np.array(old_state) - np.array(self.state)))
+        self.memory.append(np.linalg.norm(self.memory[-1] - np.array(self.state)))
 
         # Add metadata to dataframe
         self.metadata = self.metadata.append(
@@ -431,34 +431,7 @@ class SwarmEnvTrackBiggestCluster:
 
         # # Move microscope to next point if offset goes into bounds
         if dist_from_target < OFFSET_BOUNDS:
-
-        #     # Stop piezos
-        #     self.actuator.close()
-        #
-        #     old_target = self.target_points[self.target_idx]
             self.target_idx = (self.target_idx + 1) % (len(self.target_points))
-        #     new_target = self.target_points[self.target_idx]
-        #     offset_pixels = ( (new_target[0] - old_target[0]), (new_target[1] - old_target[1]) )
-        #     self.observer.move_increment(offset_pixels=np.array(offset_pixels))
-        #
-        #     # Update tracker position according to out movement
-        #     # self.tracker.bbox[0], self.tracker.bbox[1] = new_target[0], new_target[1]
-        #
-        #     # Get time
-        #     self.now = round(time.time(), 3)
-        #
-        #     # Define file name
-        #     filename = SAVE_DIR + f"{self.now}.png"
-        #
-        #     # Snap a frame from the video stream
-        #     img = self.source.snap(f_name=filename)
-        #     img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # Still need to optimize this
-        #
-        #     self.tracker.reset(img=img,
-        #                        bbox=(int(new_target[0]-0.5*self.tracker.bbox[2]),
-        #                              int(new_target[1]-0.5*self.tracker.bbox[3]),
-        #                              self.tracker.bbox[2],
-        #                              self.tracker.bbox[3]))
 
         # Add step
         self.step += 1
@@ -467,18 +440,7 @@ class SwarmEnvTrackBiggestCluster:
         return self.state
 
     def close(self):
-        print(f'Final bbox: {self.tracker.bbox}')
-        self.metadata.to_csv('metadata.csv')
-        self.actuator.close()
-        self.observer.close()
-
-
-if __name__ == '__main__':
-
-    fg = FunctionGenerator()
-    for n in range(10):
-        fg.set_frequency(frequency=n)
-        time.sleep(1)
-    # fg.set_vpp(vpp=2.1)
-
-
+        print(f'Final bbox: {self.tracker.bbox}')  # Print final bounding box, for if we want to continue tracking the same swarm
+        self.metadata.to_csv('metadata.csv')  # Save metadata
+        self.actuator.close()  # Close communication
+        self.translator.close()  # Close communication
