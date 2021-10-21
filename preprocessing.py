@@ -2,7 +2,6 @@ import cv2
 from operator import itemgetter
 import numpy as np
 from settings import *
-import matplotlib.pyplot as plt
 
 # Find the indices of the top n values from a list or array quickly
 def find_top_n_indices(data, top):
@@ -23,7 +22,7 @@ def find_clusters(image, amount_of_clusters, verbose=False):
     assert len(image.shape) == 2, "Image must be grayscale"
 
     # Using cv2.blur() method
-    cleared_image = cv2.blur(cv2.threshold(image, 130, 255, cv2.THRESH_BINARY)[1], (2, 2))  # TODO --> Automatic threshold settings
+    cleared_image = cv2.blur(cv2.threshold(image, 70, 255, cv2.THRESH_BINARY)[1], (2, 2))  # TODO --> Automatic threshold settings
 
     # Separate clusters from background and convert background to black
     canny = cv2.Canny(cleared_image, threshold1=0, threshold2=0)
@@ -59,35 +58,32 @@ def find_clusters(image, amount_of_clusters, verbose=False):
         centroids.append((cX, cY))
         areas.append(area)
         squared_area = np.sqrt(area)
-        # bboxes.append(cv2.boundingRect(contours[n]))
         bboxes.append([int(cX-squared_area),
                        int(cY-squared_area),
                        int(2*squared_area),
                        int(2*squared_area)])
 
 
-    # if verbose:
-    #
-    #     img = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-    #
-    #     for n in range(len(centroids)):
-    #         cv2.drawContours(img, contours, n, (0, 0, 255), 1)
-    #         cv2.circle(img, centroids[n], 0, (255, 0, 0), 5)
-    #         cv2.rectangle(img,
-    #                       pt1=(int(bboxes[n][0]), int(bboxes[n][1])),
-    #                       pt2=(int(bboxes[n][0] + bboxes[n][2]), int(bboxes[n][1] + bboxes[n][3])),
-    #                       color=(255, 255, 0))
-    #
-    #     # Display result
-    #
-    #     cv2.imshow("Tracking", img)
-    #     # cv2.circle(img, TARGET_COORD, 0, (255, 0, 0), 10)
-    #     # Exit if ESC pressed
-    #     k = cv2.waitKey(1) & 0xff
-    #     if k == 27:
-    #         return
+    if verbose:
 
-    # print(centroids, areas, bboxes)
+        img = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+
+        for n in range(len(centroids)):
+            cv2.drawContours(img, contours, n, (0, 0, 255), 1)
+            cv2.circle(img, centroids[n], 0, (255, 0, 0), 5)
+            cv2.rectangle(img,
+                          pt1=(int(bboxes[n][0]), int(bboxes[n][1])),
+                          pt2=(int(bboxes[n][0] + bboxes[n][2]), int(bboxes[n][1] + bboxes[n][3])),
+                          color=(255, 255, 0))
+
+        # Display result
+
+        cv2.imshow("Tracking", img)
+        # cv2.circle(img, TARGET_COORD, 0, (255, 0, 0), 10)
+        # Exit if ESC pressed
+        k = cv2.waitKey(1) & 0xff
+        if k == 27:
+            return
 
     return centroids, areas, bboxes[0]
 
@@ -107,7 +103,6 @@ class TrackClusters:
 
         # Define tracker and initialise
         self.tracker = cv2.TrackerCSRT_create()  # Very accurate, dynamic sizing, not the fastest, still okay
-        # self.tracker = cv2.TrackerKCF_create()
         # self.tracker = cv2.legacy_TrackerMedianFlow.create()  # Very fast, dynamic sizing, medium accuracy
 
         self.ok = self.tracker.init(img, self.bbox)
@@ -145,11 +140,8 @@ class TrackClusters:
             cv2.imshow("Tracking", img)
 
             # Exit if ESC pressed
-            cv2.waitKey(0)
-            # k = cv2.waitKey(1) & 0xff
-            # if k == 27:
-            #     return
+            k = cv2.waitKey(1) & 0xff
+            if k == 27:
+                return
 
         return self.center, self.bbox[2]
-
-

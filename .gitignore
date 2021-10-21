@@ -3,3 +3,7 @@ test.py
 *.csv
 make_visuals.py
 neural_net_motion_predict.py
+test_piezos.py
+make_visuals.py
+make_visuals_2.py
+build_model.py
