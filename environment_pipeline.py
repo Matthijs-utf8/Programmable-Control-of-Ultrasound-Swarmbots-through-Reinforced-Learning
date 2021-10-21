@@ -40,8 +40,14 @@ class VideoStream:
 
     def snap(self, f_name, size=(IMG_SIZE, IMG_SIZE)):
 
-        # Get image
-        img = self.core.getLastImage()
+        img = None
+
+        while not np.any(img):
+            try:
+                # Get image
+                img = self.core.getLastImage()
+            except:
+                pass
 
         # Resize image
         img = cv2.resize(img, size)
@@ -87,6 +93,9 @@ class Actuator:
         self.arduino.write(b"9")  # Turn all outputs to LOW
 
     def move(self, action: int):
+
+        if action == -1:
+            return
 
         self.arduino.write(b"9")  # Turn old piezo off
         self.arduino.write(f"{action}".encode())  # Turn new piezo on
@@ -250,11 +259,11 @@ class FunctionGenerator:
 
     def __init__(self, instrument_descriptor=INSTR_DESCRIPTOR):
         rm = visa.ResourceManager()
-        print(rm.list_resources())
+        # print(rm.list_resources())
         if not instrument_descriptor:
-            instrument_descriptor = rm.list_resources()[0]
+            instrument_descriptor = rm.list_resources()[-1]
         self.AFG3000 = rm.open_resource(instrument_descriptor)
-        self.AFG3000.write('*RST')  # reset AFG
+        # self.AFG3000.write('*RST')  # reset AFG
 
     def reset(self):
         self.set_vpp(vpp=MIN_VPP)
@@ -289,6 +298,7 @@ class SwarmEnvTrackBiggestCluster:
 
         # Metadatastructure
         self.metadata = metadata
+        # self.metadata = self.metadata.set_index('Time')
 
         # Initialize Vpp and frequency
         self.function_generator.reset()
@@ -296,12 +306,14 @@ class SwarmEnvTrackBiggestCluster:
         self.frequency = MIN_FREQUENCY  # kHz
 
         # Initialize memory
-        self.memory = deque(maxlen=5)
+        self.memory = deque(maxlen=10)
 
     def reset(self, bbox):
 
-        # Set env steps to 0
+        # Set env steps to 0 and reset function generator
         self.step = 0
+        self.function_generator.set_vpp(vpp=self.vpp)
+        self.function_generator.set_frequency(frequency=self.frequency)
 
         # Initialize tracking algorithm
         self.tracker = TrackClusters(bbox=bbox)
@@ -313,7 +325,7 @@ class SwarmEnvTrackBiggestCluster:
         self.now = round(time.time(), 3)
 
         # Define file name
-        filename = SAVE_DIR + f"reset.png"
+        filename = SAVE_DIR + f"{self.now}-reset.png"
 
         # Snap a frame from the video stream and save
         img = self.source.snap(f_name=filename)
@@ -327,18 +339,17 @@ class SwarmEnvTrackBiggestCluster:
             self.state = (0, 0)
 
         # Add metadata to dataframe
-        self.metadata.append(
-          {"Filename": filename,
-           "Time": self.now,
-           "Delta_time": None,
-           "Vpp": self.vpp,
-           "Frequency": self.frequency,
-           "Size": self.size,
-           "Action": None,
-           "Pos(t)": self.state,
-           "Pos(t-dt)": None,
-           "Target": self.target_points[self.target_idx],
-           "Step": 0}
+        self.metadata = self.metadata.append(
+            {"Filename": filename,
+             "Time": self.now,
+             "Vpp": self.vpp,
+             "Frequency": self.frequency,
+             "Size": self.size,
+             "Action": None,
+             "State": self.state,
+             "Target": self.target_points[self.target_idx],
+             "Step": self.step},
+             ignore_index=True
         )
 
         # Return centroids of n amount of swarms
@@ -355,7 +366,7 @@ class SwarmEnvTrackBiggestCluster:
         self.function_generator.set_vpp(vpp=self.vpp)
 
         # Set frequency if we don't move at a certain speed
-        if self.memory > 1:
+        if len(self.memory) > 1:
             if np.average(self.memory) < THRESHOLD_SPEED:
                 self.frequency += 1
                 if self.frequency > MAX_FREQUENCY:
@@ -365,18 +376,22 @@ class SwarmEnvTrackBiggestCluster:
 
     def env_step(self, action: int):
 
-        # Calculate vpp and frequency
+
         dist_from_target = np.linalg.norm(np.array(self.state) - np.array(self.target_points[self.target_idx]))
-        self.set_vpp_and_frequency(dist_from_target=dist_from_target)
 
-        # Deep learning model code
-        # offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
-        # action, self.vpp, self.frequency = get_action(size=self.size, offset_to_target=offset)
-        # self.function_generator.set_vpp(self.vpp)
-        # self.function_generator.set_frequency(self.frequency)
+        if not self.step % UPDATE_ENV_EVERY:
 
-        # Actuate piezos
-        self.actuator.move(action)
+            # Calculate vpp and frequency
+            self.set_vpp_and_frequency(dist_from_target=dist_from_target)
+
+            # Deep learning model code
+            # offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
+            # action, self.vpp, self.frequency = get_action(size=self.size, offset_to_target=offset)
+            # self.function_generator.set_vpp(self.vpp)
+            # self.function_generator.set_frequency(self.frequency)
+
+            # Actuate piezos
+            self.actuator.move(action)
 
         # Get time
         self.now = round(time.time(), 3)
@@ -401,7 +416,7 @@ class SwarmEnvTrackBiggestCluster:
         self.memory.append(np.linalg.norm(np.array(old_state) - np.array(self.state)))
 
         # Add metadata to dataframe
-        self.metadata.append(
+        self.metadata = self.metadata.append(
           {"Filename": filename,
            "Time": self.now,
            "Vpp": self.vpp,
@@ -410,17 +425,18 @@ class SwarmEnvTrackBiggestCluster:
            "Action": action,
            "State": self.state,
            "Target": self.target_points[self.target_idx],
-           "Step": self.step}
+           "Step": self.step},
+            ignore_index=True
         )
 
         # # Move microscope to next point if offset goes into bounds
-        # if dist_from_target < OFFSET_BOUNDS:
-        #
+        if dist_from_target < OFFSET_BOUNDS:
+
         #     # Stop piezos
         #     self.actuator.close()
         #
         #     old_target = self.target_points[self.target_idx]
-        #     self.target_idx = (self.target_idx + 1) % (len(self.target_points))
+            self.target_idx = (self.target_idx + 1) % (len(self.target_points))
         #     new_target = self.target_points[self.target_idx]
         #     offset_pixels = ( (new_target[0] - old_target[0]), (new_target[1] - old_target[1]) )
         #     self.observer.move_increment(offset_pixels=np.array(offset_pixels))
@@ -452,6 +468,7 @@ class SwarmEnvTrackBiggestCluster:
 
     def close(self):
         print(f'Final bbox: {self.tracker.bbox}')
+        self.metadata.to_csv('metadata.csv')
         self.actuator.close()
         self.observer.close()
 
@@ -459,7 +476,9 @@ class SwarmEnvTrackBiggestCluster:
 if __name__ == '__main__':
 
     fg = FunctionGenerator()
-    fg.set_frequency(frequency=240e3)
+    for n in range(10):
+        fg.set_frequency(frequency=n)
+        time.sleep(1)
     # fg.set_vpp(vpp=2.1)
 
 

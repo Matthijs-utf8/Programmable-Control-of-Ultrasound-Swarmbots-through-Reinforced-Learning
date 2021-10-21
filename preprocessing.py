@@ -22,11 +22,20 @@ def find_clusters(image, amount_of_clusters, verbose=False):
     # Check if image is grayscale
     assert len(image.shape) == 2, "Image must be grayscale"
 
+    # plt.imshow(image)
+    # plt.show()
+
     # Using cv2.blur() method
-    cleared_image = cv2.blur(cv2.threshold(image, 130, 255, cv2.THRESH_BINARY)[1], (2, 2))  # TODO --> Automatic threshold settings
+    cleared_image = cv2.blur(cv2.threshold(image, 70, 255, cv2.THRESH_BINARY)[1], (2, 2))  # TODO --> Automatic threshold settings
+
+    # plt.imshow(cleared_image)
+    # plt.show()
 
     # Separate clusters from background and convert background to black
     canny = cv2.Canny(cleared_image, threshold1=0, threshold2=0)
+
+    # plt.imshow(canny)
+    # plt.show()
 
     # Find contours
     contours, _ = cv2.findContours(canny, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -145,11 +154,41 @@ class TrackClusters:
             cv2.imshow("Tracking", img)
 
             # Exit if ESC pressed
-            cv2.waitKey(0)
-            # k = cv2.waitKey(1) & 0xff
-            # if k == 27:
-            #     return
+            k = cv2.waitKey(1) & 0xff
+            if k == 27:
+                return
 
         return self.center, self.bbox[2]
 
 
+if __name__ == '__main__':
+
+
+    import os
+    import time
+    import tqdm
+    t0 = time.time()
+
+
+    t0 = time.time()
+    cluster_tracker = TrackClusters()
+    bounds = slice(0, 300), slice(0, 300)
+
+    folder = f"C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\snapshots\\"
+    # file = '1634808131.152.png'
+    # img = cv2.imread(f"{folder}/{file}", cv2.IMREAD_GRAYSCALE)[bounds]
+    # state = cluster_tracker.reset(img)
+
+    for file in tqdm.tqdm(os.listdir(folder)):
+
+        if "-reset" in file:
+            img = cv2.imread(f"{folder}/{file}", cv2.IMREAD_GRAYSCALE)[bounds]
+            # find_clusters(img, amount_of_clusters=20, verbose=True)
+            state = cluster_tracker.reset(img)
+        else:
+            img = cv2.imread(f"{folder}/{file}", cv2.IMREAD_GRAYSCALE)[bounds]
+            # # find_clusters(img, amount_of_clusters=20, verbose=True)
+            state = cluster_tracker.update(img, verbose=True, target=(150, 150))
+            # print(np.array(TARGET_COORD) - np.array(state))
+            # print(pid.update(np.max(state)))
+            # print("___________")
