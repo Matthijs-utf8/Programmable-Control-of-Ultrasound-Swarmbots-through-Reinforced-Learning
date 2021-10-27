@@ -306,14 +306,12 @@ class SwarmEnvTrackBiggestCluster:
         self.target_idx = 0
 
         # Initialize memory
-        self.memory = deque(maxlen=10)
+        self.memory = deque(maxlen=MEMORY_LENGTH)
 
     def reset(self, bbox):
 
-        # Set env steps to 0 and reset function generator
+        # Set env steps to 0
         self.step = 0
-        self.function_generator.set_vpp(vpp=self.vpp)
-        self.function_generator.set_frequency(frequency=self.frequency)
 
         # Initialize tracking algorithm
         self.tracker = TrackClusters(bbox=bbox)
@@ -328,7 +326,7 @@ class SwarmEnvTrackBiggestCluster:
         filename = SAVE_DIR + f"{self.now}-reset.png"
 
         # Snap a frame from the video stream and save
-        img = self.source.snap(f_name=filename)
+        self.source.snap(f_name=filename)
         img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # Still need to optimize this
 
         # Get the centroid of (biggest) swarm
@@ -337,6 +335,10 @@ class SwarmEnvTrackBiggestCluster:
         # Exception handling
         if not self.state:
             self.state = (0, 0)
+
+        # Add state to memory
+        # self.memory.append(np.linalg.norm(self.memory[-1] - np.array(self.state)))
+        self.memory.append(np.array(self.state))
 
         # Add metadata to dataframe
         self.metadata = self.metadata.append(
@@ -348,42 +350,28 @@ class SwarmEnvTrackBiggestCluster:
              "Action": None,
              "State": self.state,
              "Target": self.target_points[self.target_idx],
-             "Step": self.step},
+             "Step": self.step,
+             "OFFSET_BOUNDS": OFFSET_BOUNDS,
+             "MEMORY_LENGTH": MEMORY_LENGTH,
+             "THRESHOLD_SPEED": THRESHOLD_SPEED,
+             "THRESHOLD_DIRECTION": THRESHOLD_DIRECTION,
+             "MIN_VPP": MIN_VPP,
+             "MAX_VPP": MAX_VPP,
+             "MIN_FREQUENCY": MIN_FREQUENCY,
+             "MAX_FREQUENCY": MAX_FREQUENCY},
              ignore_index=True
         )
 
         # Return centroids of n amount of swarms
         return self.state
 
-    def map(self):
-        return
-
-    # TODO --> Improve capability of PID
-    def set_vpp_and_frequency(self, dist_from_target):
-
-        # Set Vpp based on distance from target
-        self.vpp = (dist_from_target / IMG_SIZE) * (MAX_VPP - MIN_VPP) + MIN_VPP
-        self.function_generator.set_vpp(vpp=self.vpp)
-
-        # Set frequency if we don't move at a certain speed
-        if len(self.memory) > 1:
-            if np.average(self.memory) < THRESHOLD_SPEED:
-                self.frequency += 1
-                if self.frequency > MAX_FREQUENCY:
-                    self.frequency = MIN_FREQUENCY
-                self.function_generator.set_frequency(frequency=self.frequency)
-                time.sleep(0.1)  # TODO --> Optimize
-
     def env_step(self, action: int):
-
-        # Calculate distance from target position
-        dist_from_target = np.linalg.norm(np.array(self.state) - np.array(self.target_points[self.target_idx]))
 
         # Only update function generator and arduino every UPDATE_ENV_EVERY steps
         if not self.step % UPDATE_ENV_EVERY:
 
             # Calculate vpp and frequency
-            self.set_vpp_and_frequency(dist_from_target=dist_from_target)
+            self.set_vpp_and_frequency()
 
             # Deep learning model code
             # offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
@@ -412,25 +400,34 @@ class SwarmEnvTrackBiggestCluster:
         if not self.state:
             self.state = (0, 0)
 
-        # Add distance traveled to memory
-        self.memory.append(np.linalg.norm(self.memory[-1] - np.array(self.state)))
+        # Add state to memory
+        # self.memory.append(np.linalg.norm(self.memory[-1] - np.array(self.state)))
+        self.memory.append(np.array(self.state))
 
         # Add metadata to dataframe
         self.metadata = self.metadata.append(
-          {"Filename": filename,
-           "Time": self.now,
-           "Vpp": self.vpp,
-           "Frequency": self.frequency,
-           "Size": self.size,
-           "Action": action,
-           "State": self.state,
-           "Target": self.target_points[self.target_idx],
-           "Step": self.step},
-            ignore_index=True
+            {"Filename": filename,
+             "Time": self.now,
+             "Vpp": self.vpp,
+             "Frequency": self.frequency,
+             "Size": self.size,
+             "Action": action,
+             "State": self.state,
+             "Target": self.target_points[self.target_idx],
+             "Step": self.step,
+             "OFFSET_BOUNDS": OFFSET_BOUNDS,
+             "MEMORY_LENGTH": MEMORY_LENGTH,
+             "THRESHOLD_SPEED": THRESHOLD_SPEED,
+             "THRESHOLD_DIRECTION": THRESHOLD_DIRECTION,
+             "MIN_VPP": MIN_VPP,
+             "MAX_VPP": MAX_VPP,
+             "MIN_FREQUENCY": MIN_FREQUENCY,
+             "MAX_FREQUENCY": MAX_FREQUENCY},
+             ignore_index=True
         )
 
         # # Move microscope to next point if offset goes into bounds
-        if dist_from_target < OFFSET_BOUNDS:
+        if np.linalg.norm(np.array(self.state) - np.array(self.target_points[self.target_idx])) < OFFSET_BOUNDS:
             self.target_idx = (self.target_idx + 1) % (len(self.target_points))
 
         # Add step
@@ -439,8 +436,46 @@ class SwarmEnvTrackBiggestCluster:
         # Return centroids of n amount of swarms
         return self.state
 
+    def set_vpp_and_frequency(self):
+
+        # Set Vpp based on distance from target
+        self.vpp = np.sqrt(self.memory[-1] -
+                           np.array(self.target_points[self.target_idx]) /
+                           (np.sqrt(2)*0.5*IMG_SIZE)) * \
+                           (MAX_VPP - MIN_VPP) + \
+                           MIN_VPP
+        self.function_generator.set_vpp(vpp=self.vpp)
+
+        # Calculate average direction of target position
+        target_offsets = np.array(self.target_points[self.target_idx]) - np.array(self.memory)
+        avg_direction_target = np.average(target_offsets / np.linalg.norm(target_offsets, axis=1).reshape((4, 1)), axis=0)
+
+        # Calculate average direction of swarm movement
+        movement_offsets = np.array(self.memory)[1:] - np.array(self.memory)[:-1]
+        movement_speeds = np.linalg.norm(movement_offsets, axis=1)
+        avg_direction_movement = np.average(movement_offsets / movement_speeds.reshape((4, 1)), axis=0)
+
+        # Set frequency if we don't move at a certain speed
+        if len(self.memory) > 1:
+
+            # If movement is slow
+            if np.average(movement_speeds) < THRESHOLD_SPEED:
+                self.frequency += 1
+
+            # If movement is not in direction of target
+            elif np.any(np.abs(avg_direction_target - avg_direction_movement) > THRESHOLD_DIRECTION):
+                self.frequency += 1
+
+            # Make sure the frequency does not go out of bounds
+            if self.frequency > MAX_FREQUENCY:
+                self.frequency = MIN_FREQUENCY
+
+            # Set frequency to function generator
+            self.function_generator.set_frequency(frequency=self.frequency)
+            time.sleep(0.1)  # TODO --> Optimize
+
     def close(self):
         print(f'Final bbox: {self.tracker.bbox}')  # Print final bounding box, for if we want to continue tracking the same swarm
-        self.metadata.to_csv('metadata.csv')  # Save metadata
+        self.metadata.to_csv(metadata_filename)  # Save metadata
         self.actuator.close()  # Close communication
         self.translator.close()  # Close communication
