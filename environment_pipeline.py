@@ -447,13 +447,26 @@ class SwarmEnvTrackBiggestCluster:
         self.function_generator.set_vpp(vpp=self.vpp)
 
         # Calculate average direction of target position
-        target_offsets = np.array(self.target_points[self.target_idx]) - np.array(self.memory)
-        avg_direction_target = np.average(target_offsets / np.linalg.norm(target_offsets, axis=1).reshape((4, 1)), axis=0)
+        target_offsets = np.array(self.target_points[self.target_idx]) - \
+                         np.array(self.memory)
+        avg_direction_target = np.average(target_offsets /
+                                          np.linalg.norm(target_offsets,
+                                                         axis=1
+                                                         ).reshape((len(self.memory), 1)), axis=0)
 
         # Calculate average direction of swarm movement
         movement_offsets = np.array(self.memory)[1:] - np.array(self.memory)[:-1]
-        movement_speeds = np.linalg.norm(movement_offsets, axis=1)
-        avg_direction_movement = np.average(movement_offsets / movement_speeds.reshape((4, 1)), axis=0)
+        movement_speeds = np.linalg.norm(movement_offsets,
+                                         axis=1
+                                         )
+        avg_direction_movement = np.mean(
+            np.nan_to_num(movement_offsets /
+                          movement_speeds.reshape((len(self.memory) - 1, 1))),
+                                 axis=0
+                                        )
+        avg_direction_movement = np.nan_to_num(avg_direction_movement /
+                                               np.linalg.norm(avg_direction_movement)
+                                               )
 
         # Set frequency if we don't move at a certain speed
         if len(self.memory) > 1:
