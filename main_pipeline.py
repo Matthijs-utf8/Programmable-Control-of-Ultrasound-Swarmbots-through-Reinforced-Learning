@@ -1,6 +1,5 @@
 import numpy as np
-from environment_pipeline import SwarmEnvTrackBiggestCluster
-# from environment_pipeline import SwarmEnvDetectNClusters
+from environment_pipeline import SwarmEnv
 from model import random_action, walk_to_pixel
 import time
 import preprocessing
@@ -17,13 +16,13 @@ from settings import *
 def main():
 
     # Initiate environment and action model
-    env = SwarmEnvTrackBiggestCluster()
+    env = SwarmEnv()
     model = walk_to_pixel
 
     # Loop through episodes
     for episode in range(EPISODES):
 
-        state = env.reset(bbox=None)  # Fill in bbox from last step to continue tracking same swarm
+        state = env.reset()  # Fill in bbox from last step to continue tracking same swarm
         print(f"Initial state: {state}")
         t0 = time.time()
 

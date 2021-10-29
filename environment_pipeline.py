@@ -2,7 +2,6 @@ import numpy as np
 from preprocessing import TrackClusters
 import cv2
 import datetime
-import vlc
 import time
 import serial
 from settings import *
@@ -51,6 +50,7 @@ class VideoStreamHammamatsu:
 
         # Resize image
         img = cv2.resize(img, size)
+        # img = np.array(img / np.max(img))
 
         # Save image
         cv2.imwrite(f_name, img)
@@ -62,6 +62,7 @@ class VideoStreamHammamatsu:
 class VideoStreamKronos:
 
     def __init__(self, url=STREAM_URL):
+        import vlc
 
         # Define VLC instance
         instance = vlc.Instance()
@@ -261,6 +262,7 @@ class FunctionGenerator:
 
     def __init__(self, instrument_descriptor=INSTR_DESCRIPTOR):
         rm = visa.ResourceManager()  # Open resource manager
+        # print(rm.list_resources())
         if not instrument_descriptor:
             instrument_descriptor = rm.list_resources()[-1]  # TODO --> Automate this to not be hardcoded
         self.AFG3000 = rm.open_resource(instrument_descriptor)
@@ -277,7 +279,7 @@ class FunctionGenerator:
         self.AFG3000.write(f'source1:Frequency {frequency*1000}')  # Set frequency (in kHz)
 
 
-class SwarmEnvTrackBiggestCluster:
+class SwarmEnv:
 
     def __init__(self,
                  source=VideoStreamHammamatsu(),
@@ -308,13 +310,72 @@ class SwarmEnvTrackBiggestCluster:
         # Initialize memory
         self.memory = deque(maxlen=MEMORY_LENGTH)
 
-    def reset(self, bbox):
+    def draw_bbox(self, img):
+
+        refPt = []
+
+        def click_and_crop(event, x, y, flags, param):
+            if event == cv2.EVENT_LBUTTONDOWN:
+                refPt.append((x, y))
+            elif event == cv2.EVENT_LBUTTONUP:
+                refPt.append((x, y))
+                cv2.rectangle(img, refPt[0], refPt[1], (0, 255, 0), 1)
+                cv2.imshow("image", img)
+
+        clone = img.copy()
+        cv2.namedWindow("image")
+        cv2.setMouseCallback("image", click_and_crop)
+
+        while True:
+            # display the image and wait for a keypress
+            cv2.imshow("image", img)
+            key = cv2.waitKey(0)
+            # If backspace, reset
+            if key == ord("\x08"):
+                img = clone.copy()
+            # If enter, break loop
+            elif key == ord("\r"):
+                break
+
+        cv2.destroyAllWindows()
+
+        return [refPt[0][0], refPt[0][1], refPt[1][0] - refPt[0][0], refPt[1][1] - refPt[0][1]]
+
+    def draw_targets(self, img):
+
+        refPt = []
+
+        def click_and_crop(event, x, y, flags, param):
+
+            if event == cv2.EVENT_LBUTTONDOWN:
+                refPt.append((x, y))
+                cv2.circle(img, (x, y), 0, (255, 120, 0), 5)
+                cv2.imshow("image", img)
+
+
+        clone = img.copy()
+        cv2.namedWindow("image")
+        cv2.setMouseCallback("image", click_and_crop)
+
+        while True:
+            # display the image and wait for a keypress
+            cv2.imshow("image", img)
+            key = cv2.waitKey(0)
+            # if the 'r' key is pressed, reset the cropping region
+            if key == ord("\x08"):
+                img = clone.copy()
+            # If enter, break loop
+            elif key == ord("\r"):
+                break
+
+        cv2.destroyAllWindows()
+
+        return refPt
+
+    def reset(self):
 
         # Set env steps to 0
         self.step = 0
-
-        # Initialize tracking algorithm
-        self.tracker = TrackClusters(bbox=bbox)
 
         # Initialize function generator
         self.function_generator.reset()
@@ -326,15 +387,25 @@ class SwarmEnvTrackBiggestCluster:
         filename = SAVE_DIR + f"{self.now}-reset.png"
 
         # Snap a frame from the video stream and save
-        self.source.snap(f_name=filename)
-        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # Still need to optimize this
+        img = self.source.snap(f_name=filename)
+        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # TODO --> check if this works
+        # img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+
+        # Draw bbox around swarm to track
+        bbox = np.array(np.array(self.draw_bbox(img=img)), dtype=int).tolist()
+        # bbox = [85, 265, 10, 10]
+
+        # Manualy add target points
+        targets = np.array(np.array(self.draw_targets(img=img)), dtype=int).tolist()
+        if targets:
+            self.target_points = targets
+            self.target_idx = 0
+
+        # Initialize tracking algorithm
+        self.tracker = TrackClusters(bbox=bbox)
 
         # Get the centroid of (biggest) swarm
         self.state, self.size = self.tracker.reset(img=img)
-
-        # Exception handling
-        if not self.state:
-            self.state = (0, 0)
 
         # Add state to memory
         # self.memory.append(np.linalg.norm(self.memory[-1] - np.array(self.state)))
@@ -389,12 +460,13 @@ class SwarmEnvTrackBiggestCluster:
         filename = SAVE_DIR + f"{self.now}.png"
 
         # Snap a frame from the video stream
-        self.source.snap(f_name=filename)
-        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # TODO --> Get rid of double imwrite/imread in source.snap and this line
+        img = self.source.snap(f_name=filename)
+        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # TODO --> check if this works
 
         # Get the new state
         self.state, self.size = self.tracker.update(img=img,  # Read image
                                                     target=self.target_points[self.target_idx],  # For verbose purposes
+                                                    action=action,
                                                     verbose=True)  # Show live tracking
         # Exception handling
         if not self.state:
@@ -436,37 +508,30 @@ class SwarmEnvTrackBiggestCluster:
         # Return centroids of n amount of swarms
         return self.state
 
+    # TODO --> There is a lot of double euclidean distance calculation in this function now. Maybe make this smarter???
     def set_vpp_and_frequency(self):
 
         # Set Vpp based on distance from target
-        self.vpp = np.sqrt(self.memory[-1] -
-                           np.array(self.target_points[self.target_idx]) /
+        self.vpp = np.sqrt(np.linalg.norm(self.memory[-1] -
+                           np.array(self.target_points[self.target_idx])) /
                            (np.sqrt(2)*0.5*IMG_SIZE)) * \
                            (MAX_VPP - MIN_VPP) + \
                            MIN_VPP
+        # print(self.vpp)
         self.function_generator.set_vpp(vpp=self.vpp)
 
         # Calculate average direction of target position
-        target_offsets = np.array(self.target_points[self.target_idx]) - \
-                         np.array(self.memory)
-        avg_direction_target = np.average(target_offsets /
-                                          np.linalg.norm(target_offsets,
-                                                         axis=1
-                                                         ).reshape((len(self.memory), 1)), axis=0)
+        target_offsets = np.array(self.target_points[self.target_idx]) - np.array(self.memory)
+        avg_direction_target = np.average(a=target_offsets / np.linalg.norm(target_offsets,
+                                          axis=1).reshape((len(self.memory), 1)), axis=0)
 
         # Calculate average direction of swarm movement
         movement_offsets = np.array(self.memory)[1:] - np.array(self.memory)[:-1]
-        movement_speeds = np.linalg.norm(movement_offsets,
-                                         axis=1
-                                         )
-        avg_direction_movement = np.mean(
-            np.nan_to_num(movement_offsets /
-                          movement_speeds.reshape((len(self.memory) - 1, 1))),
-                                 axis=0
-                                        )
-        avg_direction_movement = np.nan_to_num(avg_direction_movement /
-                                               np.linalg.norm(avg_direction_movement)
-                                               )
+        movement_speeds = np.linalg.norm(x=movement_offsets,
+                                         axis=1)
+        avg_direction_movement = np.mean(a=np.nan_to_num(x=movement_offsets / movement_speeds.reshape((len(self.memory) - 1, 1))),
+                                         axis=0)
+        avg_direction_movement = np.nan_to_num(x=avg_direction_movement / np.linalg.norm(avg_direction_movement))
 
         # Set frequency if we don't move at a certain speed
         if len(self.memory) > 1:
@@ -492,3 +557,4 @@ class SwarmEnvTrackBiggestCluster:
         self.metadata.to_csv(metadata_filename)  # Save metadata
         self.actuator.close()  # Close communication
         self.translator.close()  # Close communication
+        cv2.destroyAllWindows()

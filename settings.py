@@ -17,10 +17,10 @@ PIXEL_MULTIPLIER_LEFT_RIGHT = 75  # Pixel --> step size correction in x
 PIXEL_MULTIPLIER_UP_DOWN = 85  # Pixel --> step size correction in y
 
 # General nvironment settings
-SAVE_DIR = "C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\snapshots\\"  # Location for images
-IMG_SIZE = 300  # Size of image (IMG_SIZE, IMG_SIZE)
-OFFSET_BOUNDS = 5  # Minimum Euclidean distance for reaching checkpoint
-TARGET_POINTS = [(150, 100), (100, 150), (150, 200), (200, 150)]  # Checkpoints
+SAVE_DIR = "C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\snapshots_2\\"  # Location for images
+IMG_SIZE = 300  # Size of environment (IMG_SIZE, IMG_SIZE)
+OFFSET_BOUNDS = 10  # Minimum Euclidean distance for reaching checkpoint
+TARGET_POINTS = [(90, 275), (25, 210)]  # Checkpoints
 UPDATE_ENV_EVERY = 16  # Update Vpp and frequency every UPDATE_ENV_EVERY steps
 
 # Model settings
@@ -32,21 +32,21 @@ UPDATE_ENV_EVERY = 16  # Update Vpp and frequency every UPDATE_ENV_EVERY steps
 # FREQUENCY_STEP_SIZE = 1  # Step size of frequency
 
 # PID
-MEMORY_LENGTH = 128  # Length of the amount of steps used in the running average state of swarm
+MEMORY_LENGTH = 16  # Length of the amount of steps used in the running average state of swarm
 THRESHOLD_SPEED = 0.5  # Minimum equilibrium speed
 THRESHOLD_DIRECTION = 0.5  # Minimum movement direction
 MIN_VPP = 2  # Minimum Vpp
-MAX_VPP = 10  # Maximum Vpp
+MAX_VPP = 5  # Maximum Vpp
 MIN_FREQUENCY = 240  # Minimum frequency
-MAX_FREQUENCY = 270  # Maximum frequency
+MAX_FREQUENCY = 260  # Maximum frequency
 
 # Run settings
-MAX_STEPS = 1000  # Number of consecutive steps in an episode
+MAX_STEPS = 2000 # Number of consecutive steps in an episode
 EPISODES = 1  # Number of episodes
 
 # Data settings
 import pandas
-metadata_filename = "metadata.csv"
+metadata_filename = "metadata_2.csv"
 try:
     METADATA = pandas.read_csv(metadata_filename)  # Make this file if you don't have it yet
     del METADATA['Unnamed: 0']  # Remove unwanted column

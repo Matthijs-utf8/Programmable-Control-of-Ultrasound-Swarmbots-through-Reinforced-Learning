@@ -48,6 +48,7 @@ def walk_to_pixel(blob_pos, target_pos):
 
     if not blob_pos:
         return random_action()
+    print(blob_pos, target_pos)
 
     offsets = - np.subtract(target_pos[0], blob_pos[0]), - np.subtract(target_pos[1], blob_pos[1])
 

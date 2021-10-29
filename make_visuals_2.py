@@ -21,18 +21,14 @@ if __name__ == "__main__":
 
     for i, datapoint in tqdm.tqdm(metadata.iterrows()):
 
-        if make_tuple(datapoint['Target']) != (150, 150):
-            continue
-        # if datapoint['Step'] > 10:
-        #     break
-
-        # print(datapoint['Time'])
+        # if make_tuple(datapoint['Target']) != (150, 150):
+        #     continue
 
         # Reset
         if '-reset.png' in datapoint['Filename']:
             centers = []
             colors = []
-            memory = deque(maxlen=128)
+            memory = deque(maxlen=256)
             last_freq = 240
             img = cv2.imread(f"{folder}{datapoint['Time']}-reset.png", cv2.IMREAD_GRAYSCALE)
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
