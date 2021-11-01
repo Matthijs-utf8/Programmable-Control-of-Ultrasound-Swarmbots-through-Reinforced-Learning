@@ -4,8 +4,6 @@ import numpy as np
 from settings import *
 import matplotlib.pyplot as plt
 
-action_map = {0: "Move left", 1: "Move up", 2: "Move right", 3: "Move down", None: None, -1: 'Reset'}
-
 # Find the indices of the top n values from a list or array quickly
 def find_top_n_indices(data, top):
     indexed = enumerate(data)  # create pairs [(0, v1), (1, v2)...]
@@ -24,21 +22,14 @@ def find_clusters(image, amount_of_clusters, verbose=False):
     # Check if image is grayscale
     assert len(image.shape) == 2, "Image must be grayscale"
 
-    # Using cv2.blur() method
-    cleared_image = cv2.blur(cv2.threshold(image, 80, 255, cv2.THRESH_BINARY)[1], (2, 2))  # TODO --> Automatic threshold settings
-
     # plt.hist(image)
     # plt.show()
 
-    # plt.imshow(cleared_image)
-    # plt.show()
-
+    # Using cv2.blur() method
+    cleared_image = cv2.blur(cv2.threshold(image, 110, 255, cv2.THRESH_BINARY)[1], (2, 2))  # TODO --> Automatic threshold settings
 
     # Separate clusters from background and convert background to black
     canny = cv2.Canny(cleared_image, threshold1=0, threshold2=0)
-
-    # plt.imshow(canny)
-    # plt.show()
 
     # Find contours
     contours, _ = cv2.findContours(canny, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -79,7 +70,6 @@ def find_clusters(image, amount_of_clusters, verbose=False):
 
     if verbose:
 
-        # img = cv2.resize(img, (1000, 1000))
         img = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
         for n in range(len(centroids)):
@@ -92,28 +82,36 @@ def find_clusters(image, amount_of_clusters, verbose=False):
 
         # Display result
 
-        cv2.imshow("Tracking", img)
+        # cv2.imshow("Tracking", img)
         # cv2.circle(img, TARGET_COORD, 0, (255, 0, 0), 10)
         # Exit if ESC pressed
-        k = cv2.waitKey(1) & 0xff
-        if k == 27:
-            return
+        # k = cv2.waitKey(1) & 0xff
+        # if k == 27:
+        #     return
 
-    return centroids, areas, bboxes[0]
+    while len(areas) < 50:
+        centroids.append((None, None))
+        areas.append(None)
+        bboxes.append([None, None, None, None])
+
+    return centroids, areas, bboxes
 
 
 class TrackClusters:
 
     def __init__(self, bbox=None):
         self.bbox = bbox
+        # print(self.bbox)
 
     def reset(self, img):
 
         # Check if we specified a bounding box to start with, otherwise select largest cluster
+        # if not self.bbox:
+        #     _, _, self.bbox = find_clusters(image=img, amount_of_clusters=1, verbose=False)
+        # if not self.bbox:
+        #     self.bbox = (0, 0, IMG_SIZE, IMG_SIZE)
         if not self.bbox:
-            _, _, self.bbox = find_clusters(image=img, amount_of_clusters=1, verbose=False)
-        if not self.bbox:
-            self.bbox = (0, 0, IMG_SIZE, IMG_SIZE)
+            return [None, None]
 
         # Define tracker and initialise
         self.tracker = cv2.TrackerCSRT_create()  # Very accurate, dynamic sizing, not the fastest, still okay
@@ -124,12 +122,16 @@ class TrackClusters:
         # Calculate center of bounding box
         self.center = [int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3])]
 
-        return self.center, self.bbox[2]
+        return self.center, self.bbox
 
-    def update(self, img, target: tuple, action: int,verbose: bool=False):
+    def update(self, img, target: tuple, verbose: bool=False):
 
         # Perform tracker update and calculate new center
-        self.ok, self.bbox = self.tracker.update(img)
+        try:
+            self.ok, self.bbox = self.tracker.update(img)
+        except:
+            # print("Problem with tracking")
+            return [None, None]
         self.bbox = list(self.bbox)
         self.center = [int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3])]
 
@@ -143,20 +145,13 @@ class TrackClusters:
                 p2 = (int(self.bbox[0] + self.bbox[2]), int(self.bbox[1] + self.bbox[3]))
                 cv2.rectangle(img, p1, p2, (255, 0, 0))
                 cv2.circle(img, target, 0, (255, 0, 0), 5)
-                cv2.putText(img, f"{action_map[action]}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-            else:
+            # else:
+            #
+            #     # Tracking failure, reset
+            #     cv2.putText(img, "Tracking failure detected", (100, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 0, 0), 2)
+            #     self.reset(img)
 
-                # Tracking failure, reset
-                cv2.putText(img, "Tracking failure detected", (100, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 0, 0), 2)
-                self.reset(img)
 
-            # Display result
-            cv2.imshow("Tracking", img)
 
-            # Exit if ESC pressed
-            k = cv2.waitKey(1) & 0xff
-            if k == 27:
-                return
-
-        return self.center, self.bbox[2]
+        return self.center, self.bbox
