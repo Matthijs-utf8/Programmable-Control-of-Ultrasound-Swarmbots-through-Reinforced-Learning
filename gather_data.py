@@ -1,4 +1,4 @@
-from preprocessing import TrackClusters, find_clusters
+from preprocessing2 import TrackClusters, find_clusters
 import numpy as np
 import pandas as pd
 import os
@@ -99,10 +99,6 @@ if __name__ == "__main__":
 
 
         for i in range(len(centers)):
-            # data.__setitem__("Size", areas[i])
-            # data.__setitem__("Pos1", centers[i])
-            # data.__setitem__("Pos2", metadata)
-            # new_metadata.append(data, ignore_index=True)
             data.__setitem__(f"Cluster{i}", [centers[i], areas[i]])
 
         new_metadata = new_metadata.append(data, ignore_index=True)

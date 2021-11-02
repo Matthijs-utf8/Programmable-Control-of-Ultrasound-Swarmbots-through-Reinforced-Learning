@@ -101,17 +101,14 @@ class TrackClusters:
 
     def __init__(self, bbox=None):
         self.bbox = bbox
-        # print(self.bbox)
 
     def reset(self, img):
 
         # Check if we specified a bounding box to start with, otherwise select largest cluster
-        # if not self.bbox:
-        #     _, _, self.bbox = find_clusters(image=img, amount_of_clusters=1, verbose=False)
-        # if not self.bbox:
-        #     self.bbox = (0, 0, IMG_SIZE, IMG_SIZE)
         if not self.bbox:
-            return [None, None]
+            _, _, self.bbox = find_clusters(image=img, amount_of_clusters=1, verbose=False)
+        if not self.bbox:
+            self.bbox = (0, 0, IMG_SIZE, IMG_SIZE)
 
         # Define tracker and initialise
         self.tracker = cv2.TrackerCSRT_create()  # Very accurate, dynamic sizing, not the fastest, still okay

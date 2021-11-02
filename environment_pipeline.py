@@ -558,3 +558,63 @@ class SwarmEnv:
         self.actuator.close()  # Close communication
         self.translator.close()  # Close communication
         cv2.destroyAllWindows()
+
+class DataGatherEnv:
+
+    def __init__(self,
+                 source=VideoStreamHammamatsu(),
+                 actuator=ActuatorPiezos(),
+                 translator=TranslatorLeica(),
+                 function_generator=FunctionGenerator(),
+                 metadata=METADATA):
+
+        # Initialize devices
+        self.source = source  # Camera
+        self.actuator = actuator  # Piezo's
+        self.translator = translator  # Leica xy-platform
+        self.function_generator = function_generator  # Function generator
+
+        # Metadata structure
+        self.metadata = metadata
+        self.metadata = self.metadata.append(
+            {"Filename": "",
+             "Time": -1,
+             "Vpp": -1,
+             "Frequency": -1,
+             "Action": -1},
+            ignore_index=True
+        )
+        self.metadata = self.metadata.dropna(axis=1, how='all')
+
+    def env_step(self, action, vpp, frequency):
+
+        ### Alter freq, vpp, action ###
+        self.actuator.move(action=action)
+        self.function_generator.set_vpp(vpp=vpp)
+        self.function_generator.set_frequency(frequency=frequency)
+        time.sleep(0.1)
+
+        # Get time
+        self.now = round(time.time(), 3)
+
+        # Define file name
+        filename = SAVE_DIR + f"{self.now}.png"
+
+        # Snap a frame from the video stream
+        self.source.snap(f_name=filename)
+
+        # Add metadata to dataframe
+        self.metadata = self.metadata.append(
+            {"Filename": filename,
+             "Time": self.now,
+             "Vpp": vpp,
+             "Frequency": frequency,
+             "Action": action},
+             ignore_index=True
+        )
+
+        self.metadata.to_csv(metadata_filename)
+
+    def close(self):
+        self.actuator.close()  # Close communication
+        self.translator.close()  # Close communication

@@ -41,33 +41,33 @@ MIN_FREQUENCY = 240  # Minimum frequency
 MAX_FREQUENCY = 260  # Maximum frequency
 
 # Run settings
-MAX_STEPS = 2000 # Number of consecutive steps in an episode
+MAX_STEPS = 2000  # Number of consecutive steps in an episode
 EPISODES = 1  # Number of episodes
 
 # Data settings
 import pandas
-metadata_filename = "metadata_2.csv"
+metadata_filename = "metadata_for_new_model0.csv"
 try:
     METADATA = pandas.read_csv(metadata_filename)  # Make this file if you don't have it yet
     del METADATA['Unnamed: 0']  # Remove unwanted column
 except:
-    METADATA = pandas.Dataframe(
+    METADATA = pandas.DataFrame(
         {"Filename": "",
-         "Time": -1,
-         "Vpp": -1,
-         "Frequency": -1,
-         "Size": -1,
-         "Action": -1,
-         "State": (-1, -1),
-         "Target": TARGET_POINTS[0],
-         "Step": -1,
-         "OFFSET_BOUNDS": OFFSET_BOUNDS,
-         "MEMORY_LENGTH": MEMORY_LENGTH,
-         "THRESHOLD_SPEED": THRESHOLD_SPEED,
-         "THRESHOLD_DIRECTION": THRESHOLD_DIRECTION,
-         "MIN_VPP": MIN_VPP,
-         "MAX_VPP": MAX_VPP,
-         "MIN_FREQUENCY": MIN_FREQUENCY,
-         "MAX_FREQUENCY": MAX_FREQUENCY
+         "Time": None,
+         "Vpp": None,
+         "Frequency": None,
+         "Size": None,
+         "Action": None,
+         "State": (None, None),
+         "Target": (None, None),
+         "Step": None,
+         "OFFSET_BOUNDS": None,
+         "MEMORY_LENGTH": None,
+         "THRESHOLD_SPEED": None,
+         "THRESHOLD_DIRECTION": None,
+         "MIN_VPP": None,
+         "MAX_VPP": None,
+         "MIN_FREQUENCY": None,
+         "MAX_FREQUENCY": None
          }
     )

@@ -9,3 +9,5 @@ make_visuals_2.py
 build_model.py
 __pycache__
 test2.py
+.pkl
+develop_model
