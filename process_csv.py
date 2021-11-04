@@ -5,6 +5,7 @@ from ast import literal_eval as make_tuple
 
 METADATA = "E:\\metadata_0.csv"
 PROCESSED_CSV = "processed_csv.csv"
+NUM_CLUSTER = 50
 
 if __name__ == "__main__":
 
@@ -29,8 +30,10 @@ if __name__ == "__main__":
 
                 data.__setitem__("Cluster", i)
                 data.__setitem__("Size", size)
-                data.__setitem__("Pos0", pos)
-                data.__setitem__("Pos1", pos_plus_30)
+                data.__setitem__("X0", pos[0])
+                data.__setitem__("Y0", pos[1])
+                data.__setitem__("X1", pos_plus_30[0])
+                data.__setitem__("Y1", pos_plus_30[1])
 
                 if None in data.values() or (None, None) in data.values():
                     continue
@@ -49,7 +52,7 @@ if __name__ == "__main__":
 
                 processed_csv = processed_csv.append(data, ignore_index=True)
 
-        if not n % 240:
+        if not n % 60:
             processed_csv.to_csv(PROCESSED_CSV)
 
 

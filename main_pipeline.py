@@ -37,12 +37,14 @@ def main():
             # action = model(state, target_pos=TARGET_POINTS[env.target_idx])
             # state = env.env_step(action)
 
-        vpp_steps = 11
-        freq_steps = 21
+        vpp_steps = 2
+        freq_steps = 6
         action_steps = 4
         env_steps = 60
-        for vpp in np.linspace(MIN_VPP, MAX_VPP, num=vpp_steps):
-            for frequency in np.linspace(MIN_FREQUENCY, MAX_FREQUENCY, num=freq_steps):
+        total_steps = vpp_steps * freq_steps * action_steps * env_steps
+        print(f"Total steps: {total_steps}")
+        for vpp in np.linspace(240, 241, num=vpp_steps):
+            for frequency in np.linspace(1, 6, num=freq_steps):
                 for action in range(action_steps-1):
                     for step in range(env_steps):
                         env.env_step(action=action,

@@ -14,7 +14,7 @@ warnings.simplefilter("ignore")
 def preprocess_data(data, mode="vect"):
 
     # Define features and labels
-    X = np.array(data[["Vpp", "Frequency", "Size", "Action", "X", "Y"]], dtype=np.float32)
+    X = np.array(data[["Vpp", "Frequency", "Size", "Action", "X0", "Y0"]], dtype=np.float32)
     if mode == "vect":
         y = np.array(data[["dX", "dY"]], dtype=np.float32)
     elif mode == "magn":

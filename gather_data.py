@@ -7,6 +7,8 @@ import tqdm
 
 SAVE_DIR = "E:\\snapshots_21_10_21\\"
 NUM_CLUSTER = 50
+METADATA = ""
+PROCESSED_METADATA = ""
 
 
 class TrackNClusters:
@@ -44,13 +46,19 @@ class TrackNClusters:
 if __name__ == "__main__":
 
     env = TrackNClusters()
-    metadata = pd.read_csv("E:\\metadata.csv")  # Make this file if you don't have it yet
+    metadata = pd.read_csv(METADATA)  # Make this file if you don't have it yet
     del metadata['Unnamed: 0']
-    new_metadata = pd.read_csv("Metadata.csv")  # Make this file if you don't have it yet
-    # del new_metadata['Unnamed: 2']  # Remove unwanted column
-    del new_metadata['Unnamed: 0']  # Remove unwanted column
-
     metadata.fillna(-1, inplace=True)
+    processed_metadata = pd.read_csv(PROCESSED_METADATA)  # Make this file if you don't have it yet
+    del processed_metadata['Unnamed: 0']  # Remove unwanted column
+
+    try:
+        processed_metadata = pd.read_csv(PROCESSED_METADATA)  # Make this file if you don't have it yet
+        del METADATA['Unnamed: 0']  # Remove unwanted column
+    except:
+        processed_metadata = pd.DataFrame(
+            {"Time": -1}
+        )
 
     for n, datapoint in tqdm.tqdm(metadata.iterrows()):
 
@@ -59,51 +67,21 @@ if __name__ == "__main__":
                 "Frequency": datapoint['Frequency'],
                 "Action": datapoint['Action']}
 
-        # if datapoint["Time"] in new_metadata["Time"]:
-        #     continue
-
-
         if '-reset.png' in datapoint['Filename']:
-            # img = cv2.imread(f"{SAVE_DIR}{datapoint['Time']}-reset.png", cv2.IMREAD_GRAYSCALE)
-            # if not np.any(img):
-            #     print("No image found1!!!")
-            #     continue
-            # centers, areas = env.reset(img=img)
-            # print(n)
-            if n % 60 == 0:
-                img = cv2.imread(f"{SAVE_DIR}{datapoint['Time']}-reset.png", cv2.IMREAD_GRAYSCALE)
-                if not np.any(img):
-                    print("No image found2!!!")
-                    continue
-
-                new_metadata.to_csv("Metadata.csv")
-                centers, areas = env.reset(img=img)
-
-            else:
-                continue
-
+            img = cv2.imread(f"{SAVE_DIR}{datapoint['Time']}-reset.png", cv2.IMREAD_GRAYSCALE)
         else:
             img = cv2.imread(f"{SAVE_DIR}{datapoint['Time']}.png", cv2.IMREAD_GRAYSCALE)
-            if not np.any(img):
-                print("No image found2!!!")
-                continue
 
-            if n % 60 == 0:
-                new_metadata.to_csv("Metadata.csv")
-                centers, areas = env.reset(img=img)
-            else:
-                centers = env.env_step(img=img)
-
-
-
-
+        if not n % 60:
+            processed_metadata.to_csv(PROCESSED_METADATA)
+            centers, areas = env.reset(img=img)
+        else:
+            centers = env.env_step(img=img)
 
         for i in range(len(centers)):
             data.__setitem__(f"Cluster{i}", [centers[i], areas[i]])
 
-        new_metadata = new_metadata.append(data, ignore_index=True)
-        # print(new_metadata.tail())
-
+        processed_metadata = processed_metadata.append(data, ignore_index=True)
 
         # Display result
         cv2.imshow("Tracking", img)
