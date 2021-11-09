@@ -88,7 +88,7 @@ if __name__ == "__main__":
                     "Frequency": new_freq,
                     "Action": new_action}
 
-            if new_vpp != vpp or new_freq != freq and new_action != action:
+            if new_vpp != vpp or new_freq != freq or new_action != action:
                 processed_metadata.to_csv(PROCESSED_METADATA)
                 centers, areas = env.reset(img=img)
             else:

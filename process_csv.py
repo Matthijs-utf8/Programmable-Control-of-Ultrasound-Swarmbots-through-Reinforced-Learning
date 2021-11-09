@@ -3,7 +3,8 @@ import pandas as pd
 import tqdm
 from ast import literal_eval as make_tuple
 
-METADATA = "metadata_for_new_model4_tracked.csv"
+# METADATA = "C:\\Users\\Matthijs\\PycharmProjects\\AI_Actuated_Microswarm_4\\Include\\AI_Actuated_Micrswarm_4\\develop_model\\Metadata.csv"
+METADATA = "E:\\metadata_for_new_model4_tracked.csv"
 PROCESSED_CSV = "metadata_for_new_model4_tracked_processed.csv"
 NUM_CLUSTER = 50
 
@@ -24,73 +25,69 @@ if __name__ == "__main__":
              "Action": -1}, index=[0]
         )
 
-    vpp = 0
-    freq = 0
-    action = 0
+    vpp = -1
+    freq = -1
+    action = -1
+    a = -1
 
     for n, datapoint in tqdm.tqdm(metadata.iterrows()):
 
-        try:
-
-            if datapoint['Time'] in processed_metadata['Time'].tolist():
-                continue
-
-            if new_vpp != vpp or new_freq != freq and new_action != action:
-                closest = np.argmin(np.array(np.abs(metadata[n:n + 100]['Time'])) - datapoint['Time'] - 1)
-                # print(closest)
-
-            for i in range(NUM_CLUSTER):
-
-                data = {"Time": datapoint['Time'],
-                        "Vpp": datapoint['Vpp'],
-                        "Frequency": datapoint['Frequency'],
-                        "Action": datapoint['Action']}
-
-                pos, size = make_tuple(datapoint[f"Cluster{i}"])
-
-        except:
-            print('Could not complete process.')
+        # Check if already in processed
+        if datapoint['Time'] in processed_csv['Time'].tolist():
             continue
 
-    for n, datapoint in tqdm.tqdm(metadata.iterrows()):
+        # Define meta variables
+        new_vpp = datapoint['Vpp']
+        new_freq = datapoint['Frequency']
+        new_action = datapoint['Action']
+        time = datapoint['Time']
 
-        if n % 60 < 30 and n < len(metadata)-1:
+        # Check if reset
+        if new_vpp != vpp or new_freq != freq or new_action != action:
+            a = 0
+            closest = np.argmin(np.array(np.abs(metadata[n:n + int(99 - a)]['Time'] - time - 1)))
+        else:
+            a += 1
+            if a >= 50:
+                continue
+            closest = np.argmin(np.array(np.abs(metadata[n:n + int(99 - a)]['Time'] - datapoint['Time'] - 1)))
 
-            for i in range(NUM_CLUSTER):
+        datapoint1 = metadata.iloc[n+closest]
 
-                data = {"Time": datapoint['Time'],
-                        "Vpp": datapoint['Vpp'],
-                        "Frequency": datapoint['Frequency'],
-                        "Action": datapoint['Action']}
+        for i in range(NUM_CLUSTER):
 
-                pos, size = make_tuple(datapoint[f"Cluster{i}"])
-                pos_plus_30 = make_tuple(metadata[f"Cluster{i}"][n + 30])[0]
+            data = {"Time": time,
+                    "Vpp": new_vpp,
+                    "Frequency": new_freq,
+                    "Action": new_action}
 
-                data.__setitem__("Cluster", i)
-                data.__setitem__("Size", size)
-                data.__setitem__("X0", pos[0])
-                data.__setitem__("Y0", pos[1])
-                data.__setitem__("X1", pos_plus_30[0])
-                data.__setitem__("Y1", pos_plus_30[1])
+            pos, size = make_tuple(datapoint[f"Cluster{i}"])
+            pos1, _ = make_tuple(datapoint1[f"Cluster{i}"])
 
-                if None in data.values():
-                    continue
+            data.__setitem__("Cluster", i)
+            data.__setitem__("Size", size)
+            data.__setitem__("X0", pos[0])
+            data.__setitem__("Y0", pos[1])
+            data.__setitem__("X1", pos1[0])
+            data.__setitem__("Y1", pos1[1])
 
-                offset = np.array(pos_plus_30) - np.array(pos)
-                magnitude = np.linalg.norm(offset)
+            if None in data.values():
+                continue
 
-                if not magnitude:
-                    continue
+            offset = np.array(pos1) - np.array(pos)
+            magnitude = np.linalg.norm(offset)
 
+            if not magnitude:
+                data.__setitem__("Magnitude", 0)
+                data.__setitem__("dX", 0)
+                data.__setitem__("dY", 0)
+            else:
                 vector = tuple(offset / magnitude)
-
                 data.__setitem__("Magnitude", magnitude)
                 data.__setitem__("dX", vector[0])
                 data.__setitem__("dY", vector[1])
 
-                processed_csv = processed_csv.append(data, ignore_index=True)
+            processed_csv = processed_csv.append(data, ignore_index=True)
 
-        if not n % 60:
+        if not n % 100:
             processed_csv.to_csv(PROCESSED_CSV)
-
-
