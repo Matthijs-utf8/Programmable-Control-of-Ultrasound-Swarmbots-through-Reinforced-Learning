@@ -6,9 +6,16 @@ from ast import literal_eval as make_tuple
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error
+import xgboost as xgb
 import pickle
 import warnings
+import atexit
+atexit.register(cv2.destroyAllWindows)
 warnings.simplefilter("ignore")
+
+PROCESSED_CSV = 'E:\\training_data.csv'
+HYPERPARAMS_CSV = 'hyperparams_xgb.csv'
 
 
 def preprocess_data(data, mode="vect"):
@@ -47,27 +54,6 @@ def train_rf(X_train,
                                bootstrap=bootstrap,
                                n_jobs=-1)
 
-    # if hp_optimize:
-    #
-    #
-    #     pprint(random_grid)
-    #
-    #
-    #     rf_random = RandomizedSearchCV(estimator=rf,
-    #                                    param_distributions=random_grid,
-    #                                    n_iter=100,
-    #                                    cv=3,
-    #                                    verbose=2,
-    #                                    random_state=0,
-    #                                    n_jobs=-1)
-    #     rf_random.fit(X_train, y_train)
-    #     best_random_model = rf_random.best_params_
-    #
-    #     print(best_random_model)
-    #
-    #     return best_random_model
-    #
-    # else:
     rf.fit(X_train, y_train)
 
     if filename:
@@ -81,133 +67,212 @@ def train_rf(X_train,
     return rf
 
 
-def evaluate_vectorial_model(model, test_features, test_labels):
-    predictions = model.predict(test_features)
+def evaluate_vectorial_model(predictions, test_labels):
     errors = abs(predictions - test_labels)
-    errors = np.degrees(np.arctan2(*errors.T[::-1])) % 360.0
+    errors = np.degrees(np.arctan2(*errors)) % 360.0
     print('Vectorial model Performance; Average Error: {:0.4f} degrees.'.format(np.mean(errors)))
     return predictions, np.mean(errors)
 
 
-def evaluate_magnitudal_model(model, test_features, test_labels):
-    predictions = model.predict(test_features)
+def evaluate_magnitudal_model(predictions, test_labels):
     errors = abs(predictions - test_labels.reshape(len(test_labels,)))
+    print('Magnitude model Performance; Average Error: {:0.4f} pixels.'.format(np.mean(errors)))
+    return predictions, np.mean(errors)
+
+def evaluate_model(model, test_features, test_labels):
+    predictions = model.predict(test_features)
+    errors = abs(predictions - np.array(test_labels))
     print('Magnitude model Performance; Average Error: {:0.4f} pixels.'.format(np.mean(errors)))
     return predictions, np.mean(errors)
 
 
 if __name__ == "__main__":
 
-    data = pd.read_csv("processed_csv.csv")
-    hyperparams = pd.read_csv("model_performance_real.csv")
-
-    # Remove unwanted column
+    data = pd.read_csv(PROCESSED_CSV)
     del data['Unnamed: 0']
-    del hyperparams['Unnamed: 0']
 
-    # Get absolute position of swarm as variables for input to model
-    locs = np.array(list(map(make_tuple, data["Pos0"])))
-    data["X"] = locs[:, 0]
-    data["Y"] = locs[:, 1]
-
-    # Remove irrelevant data
-    del data["Vector"]
-    del data["Time"]
-    del data["Cluster"]
-    del data["Pos0"]
-    del data["Pos1"]
-    data = data[data["Action"] != -1]
+    # try:
+    #     hyperparams_metadata = pd.read_csv(HYPERPARAMS_CSV)  # Make this file if you don't have it yet
+    #     del hyperparams_metadata['Unnamed: 0']  # Remove unwanted column
+    # except:
+    #     processed_metadata = pd.DataFrame(
+    #         {"Time": -1}
+    #     )
 
     # Remove outliers
+    data = data[data["Action"] != -1]
     magn_cutoff = 20
     data = data[data["Magnitude"] < magn_cutoff]
 
-    X_train_vect, X_test_vect, y_train_vect, y_test_vect = preprocess_data(data=data, mode="vect")
-    X_train_magn, X_test_magn, y_train_magn, y_test_magn = preprocess_data(data=data, mode="magn")
+    # Prepare data
+    inp = data[["Vpp", "Frequency", "Size", "Action", "X0", "Y0"]]
+    outp_dx = data[['dX']]
+    outp_dy = data[['dY']]
+    outp_magn = data[['Magnitude']]
 
-    # Define hyperparameters
-    n_estimators = [int(x) for x in np.linspace(start=200, stop=1000, num=4)]
-    max_features = ['auto']
-    max_depth = [int(x) for x in np.linspace(20, 100, num=4)]
-    min_samples_split = [2, 5, 10]
-    min_samples_leaf = [1, 2, 4]
-    bootstrap = [True]
+    data_dmatrix_dx = xgb.DMatrix(data=inp, label=outp_dx)
+    data_dmatrix_dy = xgb.DMatrix(data=inp, label=outp_dy)
+    data_dmatrix_magn = xgb.DMatrix(data=inp, label=outp_magn)
 
-    for a in tqdm(n_estimators):
-        for b in max_features:
-            for c in tqdm(max_depth):
-                for d in tqdm(min_samples_split):
-                    for e in tqdm(min_samples_leaf):
-                        for f in bootstrap:
+    TEST_SIZE = 0.5
 
-                                vect_model = train_rf(n_estimators=a,
-                                                      max_features=b,
-                                                      max_depth=c,
-                                                      min_samples_split=d,
-                                                      min_samples_leaf=e,
-                                                      bootstrap=f,
-                                                      X_train=X_train_vect,
-                                                      y_train=y_train_vect,
-                                                      filename="")
-                                magn_model = train_rf(n_estimators=a,
-                                                      max_features=b,
-                                                      max_depth=c,
-                                                      min_samples_split=d,
-                                                      min_samples_leaf=e,
-                                                      bootstrap=f,
-                                                      X_train=X_train_magn,
-                                                      y_train=y_train_magn,
-                                                      filename="")
+    X_train, X_test, y_train_dx, y_test_dx = train_test_split(inp, outp_dx, test_size=TEST_SIZE, random_state=0)
+    _, _, y_train_dy, y_test_dy = train_test_split(inp, outp_dy, test_size=TEST_SIZE, random_state=0)
+    _, _, y_train_magn, y_test_magn = train_test_split(inp, outp_magn, test_size=TEST_SIZE, random_state=0)
 
-                                vect_predict, mean_vect_error = evaluate_vectorial_model(model=vect_model,
-                                                                                        test_features=X_test_vect,
-                                                                                        test_labels=y_test_vect)
-                                magn_predict, mean_magn_error = evaluate_magnitudal_model(model=magn_model,
-                                                                                         test_features=X_test_magn,
-                                                                                         test_labels=y_test_magn)
+    # params = {"objective": "reg:squarederror", 'colsample_bytree': 0.9, 'learning_rate': 0.5,
+    #           'max_depth': 50, 'alpha': 1, 'lambda': 1}
+    #
+    # # cv_results = xgb.cv(dtrain=data_dmatrix, params=params, nfold=3,
+    # #                     num_boost_round=50, early_stopping_rounds=10, metrics="rmse", as_pandas=True, seed=123)
+    #
+    # # Define regressor
+    # xg_reg_dx = xgb.XGBRegressor(objective='reg:squarederror', colsample_bytree=0.9, learning_rate=0.5,
+    #                           max_depth=50, alpha=1, n_estimators=100, n_jobs=6)
+    # xg_reg_dy = xgb.XGBRegressor(objective='reg:squarederror', colsample_bytree=0.9, learning_rate=0.5,
+    #                           max_depth=50, alpha=1, n_estimators=100, n_jobs=6)
+    # xg_reg_magn = xgb.XGBRegressor(objective='reg:squarederror', colsample_bytree=0.9, learning_rate=0.5,
+    #                           max_depth=50, alpha=1, n_estimators=100, n_jobs=6)
+    #
+    #
+    # xg_reg_dx = xgb.train(params=params, dtrain=data_dmatrix_dx, num_boost_round=50)
+    # xg_reg_dy = xgb.train(params=params, dtrain=data_dmatrix_dy, num_boost_round=50)
+    # xg_reg_magn = xgb.train(params=params, dtrain=data_dmatrix_magn, num_boost_round=50)
+    #
+    # xg_reg_dx = xgb.cv(dtrain=data_dmatrix_dx, params=params, nfold=5,
+    #                     num_boost_round=50, early_stopping_rounds=10, metrics="mae", as_pandas=True, seed=0)
+    # xg_reg_dy = xgb.cv(dtrain=data_dmatrix_dy, params=params, nfold=5,
+    #                     num_boost_round=50, early_stopping_rounds=10, metrics="mae", as_pandas=True, seed=0)
+    # xg_reg_magn = xgb.cv(dtrain=data_dmatrix_magn, params=params, nfold=5,
+    #                     num_boost_round=50, early_stopping_rounds=10, metrics="mae", as_pandas=True, seed=0)
+    #
+    # Fit data
+    # print('Training...')
+    # xg_reg_dx.fit(X_train, y_train_dx)
+    # xg_reg_dy.fit(X_train, y_train_dy)
+    # xg_reg_magn.fit(X_train, y_train_magn)
 
-                                real_pos_1 = np.array(X_test_vect[:, 4:5] + y_test_vect * y_test_magn)
-                                predicted_pos_1 = np.array(np.round(X_test_vect[:, 4:5] + vect_predict * magn_predict.reshape((len(magn_predict), 1))), dtype=int)
+    with open('rx_reg_dx.pkl', 'rb') as f:
+        # pickle.dump(xg_reg_dx, f)
+        xg_reg_dx = pickle.load(f)
+    with open('rx_reg_dy.pkl', 'rb') as f:
+        # pickle.dump(xg_reg_dy, f)
+        xg_reg_dy = pickle.load(f)
+    with open('rx_reg_magn.pkl', 'rb') as f:
+        # pickle.dump(xg_reg_magn, f)
+        xg_reg_magn = pickle.load(f)
 
-                                avg_movement = np.mean(np.linalg.norm(real_pos_1 - predicted_pos_1, axis=1))
-                                avg_total_error = np.mean(np.linalg.norm(real_pos_1 - X_test_vect[:, 4:5], axis=1))
+    # Test data
+    print('Predicting...')
+    preds_dx = xg_reg_dx.predict(X_test)
+    preds_dy = xg_reg_dy.predict(X_test)
+    preds_magn = xg_reg_magn.predict(X_test)
 
-                                results = {'magn_cutoff': magn_cutoff,
-                                           'n_estimators': a,
-                                           'max_features': b,
-                                           'max_depth': c,
-                                           'min_samples_split': d,
-                                           'min_samples_leaf': e,
-                                           'bootstrap': f,
-                                           'AvgMovement': avg_movement,
-                                           'AvgMagnitudeError': mean_magn_error,
-                                           'AvgAngleError': mean_vect_error,
-                                           'AvgTotalError': avg_total_error,
-                                           'ErrorCoefficient': avg_total_error / avg_movement}
+    vect_pred = np.squeeze(np.array([y_test_dx.values, y_test_dy.values]))
+    vect_real = np.array([preds_dx, preds_dy])
 
-                                hyperparams = hyperparams.append(results, ignore_index=True)
-                                hyperparams.to_csv("model_performance_real.csv")
+    evaluate_vectorial_model(predictions=vect_pred, test_labels=vect_real)
+    evaluate_magnitudal_model(predictions=preds_magn, test_labels=y_test_magn.values)
 
-    best_idx = hyperparams["ErrorCoefficient"].idxmax()
+    # xgb.plot_importance(xg_reg_dx)
+    # plt.rcParams['figure.figsize'] = [5, 5]
+    # plt.show()
+    # xgb.plot_importance(xg_reg_dy)
+    # plt.rcParams['figure.figsize'] = [5, 5]
+    # plt.show()
+    # xgb.plot_importance(xg_reg_magn)
+    # plt.rcParams['figure.figsize'] = [5, 5]
+    # plt.show()
 
-    vect_model = train_rf(  n_estimators = hyperparams["n_estimators"][best_idx],
-                            max_features = hyperparams["max_features"][best_idx],
-                            max_depth = hyperparams["max_depth"][best_idx],
-                            min_samples_split = hyperparams["min_samples_split"][best_idx],
-                            min_samples_leaf = hyperparams["min_samples_leaf"][best_idx],
-                            bootstrap = hyperparams["bootstrap"][best_idx],
-                            X_train=X_train_vect,
-                            y_train=y_train_vect,
-                            filename="vect_model.pkl")
-    magn_model = train_rf(  n_estimators = hyperparams["n_estimators"][best_idx],
-                            max_features = hyperparams["max_features"][best_idx],
-                            max_depth = hyperparams["max_depth"][best_idx],
-                            min_samples_split = hyperparams["min_samples_split"][best_idx],
-                            min_samples_leaf = hyperparams["min_samples_leaf"][best_idx],
-                            bootstrap = hyperparams["bootstrap"][best_idx],
-                            X_train=X_train_magn,
-                            y_train=y_train_magn,
-                            filename="magn_model.pkl")
+    # test = mean_absolute_error(y_true=preds_dx, y_pred=y_test_dx.values)
+    # print(test)
+    # preds_dx, errors_dx = evaluate_model(model=xg_reg_dx, test_features=X_test, test_labels=y_test_dx)
+    # preds_dy, errors_dy = evaluate_model(model=xg_reg_dy, test_features=X_test, test_labels=np.array(y_test_dy))
+    # preds_magn, errors_magn = evaluate_model(model=xg_reg_magn, test_features=X_test, test_labels=np.array(y_test_magn))
+
+    # # Define hyperparameters
+    # n_estimators = [int(x) for x in np.linspace(start=200, stop=1000, num=4)]
+    # max_features = ['auto']
+    # max_depth = [int(x) for x in np.linspace(20, 100, num=4)]
+    # min_samples_split = [2, 5, 10]
+    # min_samples_leaf = [1, 2, 4]
+    # bootstrap = [True]
+    #
+    # for a in tqdm(n_estimators):
+    #     for b in max_features:
+    #         for c in tqdm(max_depth):
+    #             for d in tqdm(min_samples_split):
+    #                 for e in tqdm(min_samples_leaf):
+    #                     for f in bootstrap:
+    #
+    #                             vect_model = train_rf(n_estimators=a,
+    #                                                   max_features=b,
+    #                                                   max_depth=c,
+    #                                                   min_samples_split=d,
+    #                                                   min_samples_leaf=e,
+    #                                                   bootstrap=f,
+    #                                                   X_train=X_train_vect,
+    #                                                   y_train=y_train_vect,
+    #                                                   filename="")
+    #                             magn_model = train_rf(n_estimators=a,
+    #                                                   max_features=b,
+    #                                                   max_depth=c,
+    #                                                   min_samples_split=d,
+    #                                                   min_samples_leaf=e,
+    #                                                   bootstrap=f,
+    #                                                   X_train=X_train_magn,
+    #                                                   y_train=y_train_magn,
+    #                                                   filename="")
+    #
+    #                             vect_predict, mean_vect_error = evaluate_vectorial_model(model=vect_model,
+    #                                                                                     test_features=X_test_vect,
+    #                                                                                     test_labels=y_test_vect)
+    #                             magn_predict, mean_magn_error = evaluate_magnitudal_model(model=magn_model,
+    #                                                                                      test_features=X_test_magn,
+    #                                                                                      test_labels=y_test_magn)
+    #
+    #                             real_pos_1 = np.array(X_test_vect[:, 4:5] + y_test_vect * y_test_magn)
+    #                             predicted_pos_1 = np.array(np.round(X_test_vect[:, 4:5] + vect_predict * magn_predict.reshape((len(magn_predict), 1))), dtype=int)
+    #
+    #                             avg_movement = np.mean(np.linalg.norm(real_pos_1 - predicted_pos_1, axis=1))
+    #                             avg_total_error = np.mean(np.linalg.norm(real_pos_1 - X_test_vect[:, 4:5], axis=1))
+    #
+    #                             results = {'magn_cutoff': magn_cutoff,
+    #                                        'n_estimators': a,
+    #                                        'max_features': b,
+    #                                        'max_depth': c,
+    #                                        'min_samples_split': d,
+    #                                        'min_samples_leaf': e,
+    #                                        'bootstrap': f,
+    #                                        'AvgMovement': avg_movement,
+    #                                        'AvgMagnitudeError': mean_magn_error,
+    #                                        'AvgAngleError': mean_vect_error,
+    #                                        'AvgTotalError': avg_total_error,
+    #                                        'ErrorCoefficient': avg_total_error / avg_movement}
+    #
+    #                             hyperparams_metadata = hyperparams_metadata.append(results, ignore_index=True)
+    #                             hyperparams_metadata.to_csv("model_performance_real.csv")
+    #
+    # best_idx = hyperparams_metadata["ErrorCoefficient"].idxmax()
+    #
+    # vect_model = train_rf(  n_estimators = hyperparams_metadata["n_estimators"][best_idx],
+    #                         max_features = hyperparams_metadata["max_features"][best_idx],
+    #                         max_depth = hyperparams_metadata["max_depth"][best_idx],
+    #                         min_samples_split = hyperparams_metadata["min_samples_split"][best_idx],
+    #                         min_samples_leaf = hyperparams_metadata["min_samples_leaf"][best_idx],
+    #                         bootstrap = hyperparams_metadata["bootstrap"][best_idx],
+    #                         X_train=X_train_vect,
+    #                         y_train=y_train_vect,
+    #                         filename="vect_model.pkl")
+    # magn_model = train_rf(  n_estimators = hyperparams_metadata["n_estimators"][best_idx],
+    #                         max_features = hyperparams_metadata["max_features"][best_idx],
+    #                         max_depth = hyperparams_metadata["max_depth"][best_idx],
+    #                         min_samples_split = hyperparams_metadata["min_samples_split"][best_idx],
+    #                         min_samples_leaf = hyperparams_metadata["min_samples_leaf"][best_idx],
+    #                         bootstrap = hyperparams_metadata["bootstrap"][best_idx],
+    #                         X_train=X_train_magn,
+    #                         y_train=y_train_magn,
+    #                         filename="magn_model.pkl")
 
 
     # with open('vectorial_random_best.pkl', 'rb') as f:
@@ -216,38 +281,63 @@ if __name__ == "__main__":
     #     magn_model = pickle.load(f)
 
 
-    # img = np.ones((300, 300, 3))
-    # for i in range(len(y_test_vect)-1):
-    #     cv2.circle(img,
-    #                (int(round(X_test_vect[:, 4][i])), int(round(X_test_vect[:, 5][i]))),
-    #                0,
-    #                (255, 0, 0),
-    #                5)
-    #     cv2.arrowedLine(img,
-    #                     (int(round(X_test_vect[:, 4][i])), int(round(X_test_vect[:, 5][i]))),
-    #                     tuple(np.array(np.array((int(round(X_test_vect[:, 4][i])), int(round(X_test_vect[:, 5][i])))) + y_test_vect[i] * 30, dtype=np.int)),
-    #                     (0, 255, 0),
-    #                     1)
-    #     cv2.arrowedLine(img,
-    #                     (int(round(X_test_vect[:, 4][i])), int(round(X_test_vect[:, 5][i]))),
-    #                     tuple(np.array(np.array((int(round(X_test_vect[:, 4][i])), int(round(X_test_vect[:, 5][i])))) + vect_predict[i] * 30, dtype=np.int)),
-    #                     (0, 0, 255),
-    #                     1)
-    #
-    #     cv2.circle(img,
-    #                (int(np.round(X_test_vect[:, 4][i] + y_test_vect[i][0] * y_test_magn[i])),
-    #                 int(np.round(X_test_vect[:, 5][i] + y_test_vect[i][1] * y_test_magn[i]))),
-    #                0,
-    #                (0, 255, 0),
-    #                5)
-    #     cv2.circle(img,
-    #                (int(np.round(X_test_vect[:, 4][i] + vect_predict[i][0] * magn_predict[i])),
-    #                 int(np.round(X_test_vect[:, 5][i] + vect_predict[i][1] * magn_predict[i]))),
-    #                0,
-    #                (0, 0, 255),
-    #                3)
-    #     cv2.imshow("Image", img)
-    #     cv2.waitKey(0)
+    img = np.ones((1200, 1200, 3))
+    for i in range(len(y_test_dx)-1):
+
+        pos0 = np.array((int(round(X_test['X0'].iloc[i])), int(round(X_test['Y0'].iloc[i])))) * 4
+
+        vect_real = np.array([y_test_dx['dX'].iloc[i]*y_test_magn['Magnitude'].iloc[i],
+                              y_test_dy['dY'].iloc[i]*y_test_magn['Magnitude'].iloc[i]]) * 4
+
+
+        pos_1_real = np.array(np.round(pos0 + vect_real), dtype=int)
+
+        vect_pred = np.array([preds_dx[i] * preds_magn[i],
+                              preds_dy[i] * preds_magn[i]]) * 4
+
+
+        pos_1_pred = np.array(np.round(pos0 + vect_pred), dtype=int)
+
+        vect_real = vect_real / np.linalg.norm(vect_real)
+        vect_pred = vect_pred / np.linalg.norm(vect_pred)
+        # print(pos0, pos_1_real, pos_1_pred)
+
+        # Pos0
+        cv2.circle(img,
+                   pos0,
+                   0,
+                   (255, 0, 0),
+                   4)
+
+        # Pos0 to real pos1
+        cv2.arrowedLine(img,
+                        pos0,
+                        np.array(pos0 + vect_real * 20, dtype=int),
+                        (0, 255, 0),
+                        1)
+
+        # Pos0 to predicted pos1
+        cv2.arrowedLine(img,
+                        pos0,
+                        np.array(pos0 + vect_pred * 20, dtype=int),
+                        (0, 0, 255),
+                        1)
+
+        # Pos1_real
+        cv2.circle(img,
+                   pos_1_real,
+                   0,
+                   (0, 255, 0),
+                   5)
+
+        # Pos1_predict
+        cv2.circle(img,
+                   pos_1_pred,
+                   0,
+                   (0, 0, 255),
+                   3)
+        cv2.imshow("Image", img)
+        cv2.waitKey(0)
 
 
 

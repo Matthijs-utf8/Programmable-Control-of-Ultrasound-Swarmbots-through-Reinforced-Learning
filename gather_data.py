@@ -4,11 +4,12 @@ import pandas as pd
 import os
 import cv2
 import tqdm
+import multiprocessing
 
 SAVE_DIR = "E:\\snapshots_21_10_21\\"
 NUM_CLUSTER = 50
-METADATA = ""
-PROCESSED_METADATA = ""
+METADATA = "metadata_for_new_model4.csv"
+PROCESSED_METADATA = "metadata_for_new_model4_tracked.csv"
 
 
 class TrackNClusters:
@@ -43,51 +44,74 @@ class TrackNClusters:
 
         return centers
 
+env = TrackNClusters()
+metadata = pd.read_csv(METADATA)  # Make this file if you don't have it yet
+del metadata['Unnamed: 0']
+metadata.fillna(-1, inplace=True)
+
+# try:
+processed_metadata = pd.read_csv(PROCESSED_METADATA)  # Make this file if you don't have it yet
+del processed_metadata['Unnamed: 0']  # Remove unwanted column
+
+vpp = 0
+freq = 0
+action = 0
+
 if __name__ == "__main__":
 
-    env = TrackNClusters()
-    metadata = pd.read_csv(METADATA)  # Make this file if you don't have it yet
-    del metadata['Unnamed: 0']
-    metadata.fillna(-1, inplace=True)
-    processed_metadata = pd.read_csv(PROCESSED_METADATA)  # Make this file if you don't have it yet
-    del processed_metadata['Unnamed: 0']  # Remove unwanted column
 
-    try:
-        processed_metadata = pd.read_csv(PROCESSED_METADATA)  # Make this file if you don't have it yet
-        del METADATA['Unnamed: 0']  # Remove unwanted column
-    except:
-        processed_metadata = pd.DataFrame(
-            {"Time": -1}
-        )
+    # except:
+
+    # print(processed_metadata['Time'].tolist())
+
+    # processed_metadata = pd.DataFrame(
+    #     [{"Time": 0,
+    #      "Vpp": vpp,
+    #      "Frequency": freq,
+    #      "Action": action}]
+    # )
 
     for n, datapoint in tqdm.tqdm(metadata.iterrows()):
 
-        data = {"Time": datapoint['Time'],
-                "Vpp": datapoint['Vpp'],
-                "Frequency": datapoint['Frequency'],
-                "Action": datapoint['Action']}
+        # img = cv2.imread(f"{SAVE_DIR}{datapoint['Time']}.png", cv2.IMREAD_GRAYSCALE)
+        try:
+            if datapoint['Time'] in processed_metadata['Time'].tolist():
+                continue
+            # print(datapoint['Time'])
+            img = cv2.imread(datapoint['Filename'], cv2.IMREAD_GRAYSCALE)
+            new_vpp = datapoint['Vpp']
+            new_freq = datapoint['Frequency']
+            new_action = datapoint['Action']
 
-        if '-reset.png' in datapoint['Filename']:
-            img = cv2.imread(f"{SAVE_DIR}{datapoint['Time']}-reset.png", cv2.IMREAD_GRAYSCALE)
-        else:
-            img = cv2.imread(f"{SAVE_DIR}{datapoint['Time']}.png", cv2.IMREAD_GRAYSCALE)
+            data = {"Time": datapoint['Time'],
+                    "Vpp": new_vpp,
+                    "Frequency": new_freq,
+                    "Action": new_action}
 
-        if not n % 60:
-            processed_metadata.to_csv(PROCESSED_METADATA)
-            centers, areas = env.reset(img=img)
-        else:
-            centers = env.env_step(img=img)
+            if new_vpp != vpp or new_freq != freq and new_action != action:
+                processed_metadata.to_csv(PROCESSED_METADATA)
+                centers, areas = env.reset(img=img)
+            else:
+                centers = env.env_step(img=img)
 
-        for i in range(len(centers)):
-            data.__setitem__(f"Cluster{i}", [centers[i], areas[i]])
+            for i in range(len(centers)):
+                data.__setitem__(f"Cluster{i}", [centers[i], areas[i]])
 
-        processed_metadata = processed_metadata.append(data, ignore_index=True)
+            processed_metadata = processed_metadata.append(data, ignore_index=True)
 
-        # Display result
-        cv2.imshow("Tracking", img)
+            vpp = new_vpp
+            freq = new_freq
+            action = new_action
 
-        # Exit if ESC pressed
-        k = cv2.waitKey(1) & 0xff
-        if k == 27:
-            break
+            # Display result
+            cv2.imshow("Tracking", img)
+
+            # Exit if ESC pressed
+            k = cv2.waitKey(1) & 0xff
+            if k == 27:
+                break
+        except:
+            continue
+
+
 

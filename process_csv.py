@@ -3,22 +3,60 @@ import pandas as pd
 import tqdm
 from ast import literal_eval as make_tuple
 
-METADATA = "E:\\metadata_0.csv"
-PROCESSED_CSV = "processed_csv.csv"
+METADATA = "metadata_for_new_model4_tracked.csv"
+PROCESSED_CSV = "metadata_for_new_model4_tracked_processed.csv"
 NUM_CLUSTER = 50
 
 if __name__ == "__main__":
 
     metadata = pd.read_csv(METADATA)
     del metadata['Unnamed: 0']
-    processed_csv = pd.read_csv(PROCESSED_CSV)
-    del processed_csv['Unnamed: 0']
+
+    try:
+        processed_csv = pd.read_csv(PROCESSED_CSV)  # Make this file if you don't have it yet
+        del processed_csv['Unnamed: 0']  # Remove unwanted column
+    except:
+        processed_csv = pd.DataFrame(
+            {'Index': 0,
+             "Time": -1,
+             "Vpp": -1,
+             "Frequency": -1,
+             "Action": -1}, index=[0]
+        )
+
+    vpp = 0
+    freq = 0
+    action = 0
+
+    for n, datapoint in tqdm.tqdm(metadata.iterrows()):
+
+        try:
+
+            if datapoint['Time'] in processed_metadata['Time'].tolist():
+                continue
+
+            if new_vpp != vpp or new_freq != freq and new_action != action:
+                closest = np.argmin(np.array(np.abs(metadata[n:n + 100]['Time'])) - datapoint['Time'] - 1)
+                # print(closest)
+
+            for i in range(NUM_CLUSTER):
+
+                data = {"Time": datapoint['Time'],
+                        "Vpp": datapoint['Vpp'],
+                        "Frequency": datapoint['Frequency'],
+                        "Action": datapoint['Action']}
+
+                pos, size = make_tuple(datapoint[f"Cluster{i}"])
+
+        except:
+            print('Could not complete process.')
+            continue
 
     for n, datapoint in tqdm.tqdm(metadata.iterrows()):
 
         if n % 60 < 30 and n < len(metadata)-1:
 
-            for i in range(50):
+            for i in range(NUM_CLUSTER):
 
                 data = {"Time": datapoint['Time'],
                         "Vpp": datapoint['Vpp'],
@@ -35,7 +73,7 @@ if __name__ == "__main__":
                 data.__setitem__("X1", pos_plus_30[0])
                 data.__setitem__("Y1", pos_plus_30[1])
 
-                if None in data.values() or (None, None) in data.values():
+                if None in data.values():
                     continue
 
                 offset = np.array(pos_plus_30) - np.array(pos)

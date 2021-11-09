@@ -17,7 +17,7 @@ PIXEL_MULTIPLIER_LEFT_RIGHT = 75  # Pixel --> step size correction in x
 PIXEL_MULTIPLIER_UP_DOWN = 85  # Pixel --> step size correction in y
 
 # General nvironment settings
-SAVE_DIR = "C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\snapshots_2\\"  # Location for images
+SAVE_DIR = "C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\data_standardized_4\\"  # Location for images
 IMG_SIZE = 300  # Size of environment (IMG_SIZE, IMG_SIZE)
 OFFSET_BOUNDS = 10  # Minimum Euclidean distance for reaching checkpoint
 TARGET_POINTS = [(90, 275), (25, 210)]  # Checkpoints
@@ -46,7 +46,7 @@ EPISODES = 1  # Number of episodes
 
 # Data settings
 import pandas
-metadata_filename = "metadata_for_new_model0.csv"
+metadata_filename = "metadata_for_new_model4.csv"
 try:
     METADATA = pandas.read_csv(metadata_filename)  # Make this file if you don't have it yet
     del METADATA['Unnamed: 0']  # Remove unwanted column
