@@ -6,10 +6,10 @@ import cv2
 import tqdm
 import multiprocessing
 
-SAVE_DIR = "E:\\snapshots_21_10_21\\"
+SAVE_DIR = "data_standerdized_4"
 NUM_CLUSTER = 50
 METADATA = "metadata_for_new_model4.csv"
-PROCESSED_METADATA = "metadata_for_new_model4_tracked.csv"
+PROCESSED_METADATA = "metadata_for_new_model4_tracked2.csv"
 
 
 class TrackNClusters:
