@@ -4,8 +4,8 @@ import tqdm
 from ast import literal_eval as make_tuple
 
 # METADATA = "C:\\Users\\Matthijs\\PycharmProjects\\AI_Actuated_Microswarm_4\\Include\\AI_Actuated_Micrswarm_4\\develop_model\\Metadata.csv"
-METADATA = "E:\\metadata_for_new_model4_tracked.csv"
-PROCESSED_CSV = "metadata_for_new_model4_tracked_processed.csv"
+METADATA = "metadata_for_new_model4_tracked2.csv"
+PROCESSED_CSV = "training_data\\metadata_for_new_model4_tracked2_processed"
 NUM_CLUSTER = 50
 
 if __name__ == "__main__":
@@ -13,8 +13,15 @@ if __name__ == "__main__":
     metadata = pd.read_csv(METADATA)
     del metadata['Unnamed: 0']
 
+    vpp = -1
+    freq = -1
+    action = -1
+    a = -1
+
+    csv_index = 0
+
     try:
-        processed_csv = pd.read_csv(PROCESSED_CSV)  # Make this file if you don't have it yet
+        processed_csv = pd.read_csv(f"{PROCESSED_CSV}_{csv_index}.csv")  # Make this file if you don't have it yet
         del processed_csv['Unnamed: 0']  # Remove unwanted column
     except:
         processed_csv = pd.DataFrame(
@@ -25,12 +32,24 @@ if __name__ == "__main__":
              "Action": -1}, index=[0]
         )
 
-    vpp = -1
-    freq = -1
-    action = -1
-    a = -1
 
     for n, datapoint in tqdm.tqdm(metadata.iterrows()):
+
+
+        if int(n / 1000) > csv_index:
+            processed_csv.to_csv(f"{PROCESSED_CSV}_{csv_index}.csv")
+            csv_index += 1
+            try:
+                processed_csv = pd.read_csv(f"{PROCESSED_CSV}_{csv_index}.csv")  # Make this file if you don't have it yet
+                del processed_csv['Unnamed: 0']  # Remove unwanted column
+            except:
+                processed_csv = pd.DataFrame(
+                    {'Index': 0,
+                     "Time": -1,
+                     "Vpp": -1,
+                     "Frequency": -1,
+                     "Action": -1}, index=[0]
+                )
 
         # Check if already in processed
         if datapoint['Time'] in processed_csv['Time'].tolist():
@@ -90,4 +109,4 @@ if __name__ == "__main__":
             processed_csv = processed_csv.append(data, ignore_index=True)
 
         if not n % 100:
-            processed_csv.to_csv(PROCESSED_CSV)
+            processed_csv.to_csv(f"{PROCESSED_CSV}_{csv_index}.csv")
