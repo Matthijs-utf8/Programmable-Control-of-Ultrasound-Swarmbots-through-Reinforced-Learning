@@ -11,3 +11,4 @@ __pycache__
 test2.py
 .pkl
 develop_model
+rx_reg2.pkl
