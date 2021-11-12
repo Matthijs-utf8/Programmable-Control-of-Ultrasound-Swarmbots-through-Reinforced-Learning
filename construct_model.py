@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error
+from sklearn.multioutput import MultiOutputRegressor
 import xgboost as xgb
 import pickle
 import warnings
@@ -14,7 +15,7 @@ import atexit
 atexit.register(cv2.destroyAllWindows)
 warnings.simplefilter("ignore")
 
-PROCESSED_CSV = 'E:\\training_data.csv'
+PROCESSED_CSV = 'E:\\metadata_for_new_model4_tracked2_processed.csv'
 HYPERPARAMS_CSV = 'hyperparams_xgb.csv'
 
 
@@ -102,39 +103,48 @@ if __name__ == "__main__":
     # Remove outliers
     data = data[data["Action"] != -1]
     magn_cutoff = 20
+    # data = data[data["Magnitude"] > 0]
     data = data[data["Magnitude"] < magn_cutoff]
 
     # Prepare data
     inp = data[["Vpp", "Frequency", "Size", "Action", "X0", "Y0"]]
-    outp_dx = data[['dX']]
-    outp_dy = data[['dY']]
-    outp_magn = data[['Magnitude']]
+    # outp_dx = data[['dX']]
+    # outp_dy = data[['dY']]
+    # outp_magn = data[['Magnitude']]
+    outp = data[["dX", "dY", "Magnitude"]]
 
-    data_dmatrix_dx = xgb.DMatrix(data=inp, label=outp_dx)
-    data_dmatrix_dy = xgb.DMatrix(data=inp, label=outp_dy)
-    data_dmatrix_magn = xgb.DMatrix(data=inp, label=outp_magn)
+    # data_dmatrix_dx = xgb.DMatrix(data=inp, label=outp_dx)
+    # data_dmatrix_dy = xgb.DMatrix(data=inp, label=outp_dy)
+    # data_dmatrix_magn = xgb.DMatrix(data=inp, label=outp_magn)
 
-    TEST_SIZE = 0.5
+    TEST_SIZE = 0.2
 
-    X_train, X_test, y_train_dx, y_test_dx = train_test_split(inp, outp_dx, test_size=TEST_SIZE, random_state=0)
-    _, _, y_train_dy, y_test_dy = train_test_split(inp, outp_dy, test_size=TEST_SIZE, random_state=0)
-    _, _, y_train_magn, y_test_magn = train_test_split(inp, outp_magn, test_size=TEST_SIZE, random_state=0)
+    # X_train, X_test, y_train_dx, y_test_dx = train_test_split(inp, outp_dx, test_size=TEST_SIZE, random_state=0)
+    # _, _, y_train_dy, y_test_dy = train_test_split(inp, outp_dy, test_size=TEST_SIZE, random_state=0)
+    # _, _, y_train_magn, y_test_magn = train_test_split(inp, outp_magn, test_size=TEST_SIZE, random_state=0)
+    X_train, X_test, y_train, y_test = train_test_split(inp, outp, test_size=TEST_SIZE, random_state=0)
+    X_train, X_test, y_train, y_test = np.array(X_train), np.array(X_test), np.array(y_train), np.array(y_test)
+    # y_test_dx, y_test_dy, y_test_magn =
 
-    # params = {"objective": "reg:squarederror", 'colsample_bytree': 0.9, 'learning_rate': 0.5,
-    #           'max_depth': 50, 'alpha': 1, 'lambda': 1}
+    params = {"objective": "reg:squarederror", 'colsample_bytree': 0.9, 'learning_rate': 0.5,
+              'max_depth': 50, 'alpha': 1, 'lambda': 1}
     #
     # # cv_results = xgb.cv(dtrain=data_dmatrix, params=params, nfold=3,
     # #                     num_boost_round=50, early_stopping_rounds=10, metrics="rmse", as_pandas=True, seed=123)
     #
-    # # Define regressor
+    # Define regressor
     # xg_reg_dx = xgb.XGBRegressor(objective='reg:squarederror', colsample_bytree=0.9, learning_rate=0.5,
     #                           max_depth=50, alpha=1, n_estimators=100, n_jobs=6)
     # xg_reg_dy = xgb.XGBRegressor(objective='reg:squarederror', colsample_bytree=0.9, learning_rate=0.5,
     #                           max_depth=50, alpha=1, n_estimators=100, n_jobs=6)
     # xg_reg_magn = xgb.XGBRegressor(objective='reg:squarederror', colsample_bytree=0.9, learning_rate=0.5,
     #                           max_depth=50, alpha=1, n_estimators=100, n_jobs=6)
-    #
-    #
+    xg_reg = xgb.XGBRegressor(objective='reg:squarederror', colsample_bytree=0.9, learning_rate=0.5,
+                              max_depth=50, alpha=1, n_estimators=100, n_jobs=6)
+
+
+
+
     # xg_reg_dx = xgb.train(params=params, dtrain=data_dmatrix_dx, num_boost_round=50)
     # xg_reg_dy = xgb.train(params=params, dtrain=data_dmatrix_dy, num_boost_round=50)
     # xg_reg_magn = xgb.train(params=params, dtrain=data_dmatrix_magn, num_boost_round=50)
@@ -147,32 +157,39 @@ if __name__ == "__main__":
     #                     num_boost_round=50, early_stopping_rounds=10, metrics="mae", as_pandas=True, seed=0)
     #
     # Fit data
-    # print('Training...')
+    print('Training...')
     # xg_reg_dx.fit(X_train, y_train_dx)
     # xg_reg_dy.fit(X_train, y_train_dy)
     # xg_reg_magn.fit(X_train, y_train_magn)
+    # xg_reg.fit(X_train, y_train)
+    multioutp = MultiOutputRegressor(xg_reg).fit(X_train, y_train)
 
-    with open('rx_reg_dx.pkl', 'rb') as f:
-        # pickle.dump(xg_reg_dx, f)
-        xg_reg_dx = pickle.load(f)
-    with open('rx_reg_dy.pkl', 'rb') as f:
-        # pickle.dump(xg_reg_dy, f)
-        xg_reg_dy = pickle.load(f)
-    with open('rx_reg_magn.pkl', 'rb') as f:
-        # pickle.dump(xg_reg_magn, f)
-        xg_reg_magn = pickle.load(f)
+    # with open('rx_reg_dx2.pkl', 'wb') as f:
+    #     pickle.dump(xg_reg_dx, f)
+    #     # xg_reg_dx = pickle.load(f)
+    # with open('rx_reg_dy2.pkl', 'wb') as f:
+    #     pickle.dump(xg_reg_dy, f)
+    #     # xg_reg_dy = pickle.load(f)
+    # with open('rx_reg_magn2.pkl', 'wb') as f:
+    #     pickle.dump(xg_reg_magn, f)
+    #     # xg_reg_magn = pickle.load(f)
+    # with open('rx_reg2.pkl', 'wb') as f:
+    #     pickle.dump(xg_reg, f)
+        # xg_reg_magn = pickle.load(f)
 
     # Test data
     print('Predicting...')
-    preds_dx = xg_reg_dx.predict(X_test)
-    preds_dy = xg_reg_dy.predict(X_test)
-    preds_magn = xg_reg_magn.predict(X_test)
+    preds = multioutp.predict(X_test)
 
-    vect_pred = np.squeeze(np.array([y_test_dx.values, y_test_dy.values]))
-    vect_real = np.array([preds_dx, preds_dy])
+    # preds_dx = xg_reg_dx.predict(X_test)
+    # preds_dy = xg_reg_dy.predict(X_test)
+    # preds_magn = xg_reg_magn.predict(X_test)
+
+    vect_pred = np.squeeze(np.array([y_test[:, 0], y_test[:, 1]]))
+    vect_real = np.array([preds[:, 0], preds[:, 1]])
 
     evaluate_vectorial_model(predictions=vect_pred, test_labels=vect_real)
-    evaluate_magnitudal_model(predictions=preds_magn, test_labels=y_test_magn.values)
+    evaluate_magnitudal_model(predictions=preds[:, 2], test_labels=y_test[:, 2])
 
     # xgb.plot_importance(xg_reg_dx)
     # plt.rcParams['figure.figsize'] = [5, 5]
@@ -282,57 +299,71 @@ if __name__ == "__main__":
 
 
     img = np.ones((1200, 1200, 3))
-    for i in range(len(y_test_dx)-1):
+    for i in range(len(y_test[:, 0])-1):
 
-        pos0 = np.array((int(round(X_test['X0'].iloc[i])), int(round(X_test['Y0'].iloc[i])))) * 4
+        pos0 = np.array((int(round(X_test[i, 0])), int(round(X_test[i, 1])))) * 4
 
-        vect_real = np.array([y_test_dx['dX'].iloc[i]*y_test_magn['Magnitude'].iloc[i],
-                              y_test_dy['dY'].iloc[i]*y_test_magn['Magnitude'].iloc[i]]) * 4
+        print(pos0)
+
+        vect_real = np.array([y_test[i, 0]*y_test[i, 2],
+                              y_test[i, 1]*y_test[i, 2]]) * 4
+
+
 
 
         pos_1_real = np.array(np.round(pos0 + vect_real), dtype=int)
 
-        vect_pred = np.array([preds_dx[i] * preds_magn[i],
-                              preds_dy[i] * preds_magn[i]]) * 4
+        # print(pos_1_real)
+
+        vect_pred = np.array([preds[i, 0] * preds[i, 2],
+                              preds[i, 1] * preds[i, 2]]) * 4
+
+
 
 
         pos_1_pred = np.array(np.round(pos0 + vect_pred), dtype=int)
+
+        # print(pos_1_pred)
 
         vect_real = vect_real / np.linalg.norm(vect_real)
         vect_pred = vect_pred / np.linalg.norm(vect_pred)
         # print(pos0, pos_1_real, pos_1_pred)
 
+        # print(vect_pred)
+        # print(vect_real)
+        # print("_________")
+
         # Pos0
         cv2.circle(img,
-                   pos0,
+                   tuple(pos0),
                    0,
                    (255, 0, 0),
                    4)
 
         # Pos0 to real pos1
         cv2.arrowedLine(img,
-                        pos0,
-                        np.array(pos0 + vect_real * 20, dtype=int),
+                        tuple(pos0),
+                        tuple(np.array(pos0 + vect_real * 20, dtype=int)),
                         (0, 255, 0),
                         1)
 
         # Pos0 to predicted pos1
         cv2.arrowedLine(img,
-                        pos0,
-                        np.array(pos0 + vect_pred * 20, dtype=int),
+                        tuple(pos0),
+                        tuple(np.array(pos0 + vect_pred * 20, dtype=int)),
                         (0, 0, 255),
                         1)
 
         # Pos1_real
         cv2.circle(img,
-                   pos_1_real,
+                   tuple(pos_1_real),
                    0,
                    (0, 255, 0),
                    5)
 
         # Pos1_predict
         cv2.circle(img,
-                   pos_1_pred,
+                   tuple(pos_1_pred),
                    0,
                    (0, 0, 255),
                    3)
