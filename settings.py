@@ -25,11 +25,12 @@ UPDATE_ENV_EVERY = 16  # Update Vpp and frequency every UPDATE_ENV_EVERY steps
 
 # Model settings
 # from tensorflow.keras.models import load_model
-# MODEL_NAME = 'predict_state'  # Name of model
-# MODEL = load_model(f"C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\models\\" + MODEL_NAME)  # Load model
+import pickle
+MODEL_NAME = 'predict_state'  # Name of model
+MODEL = pickle.load(open(f"C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\models\\" + MODEL_NAME, 'rb'))  # Load model
 # SIZE_NORMALIZING_FACTOR = 400  # TODO --> Optimize
-# VPP_STEP_SIZE = 0.2  # Step size of vpp
-# FREQUENCY_STEP_SIZE = 1  # Step size of frequency
+VPP_STEP_SIZE = 0.2  # Step size of vpp
+FREQUENCY_STEP_SIZE = 1  # Step size of frequency
 
 # PID
 MEMORY_LENGTH = 16  # Length of the amount of steps used in the running average state of swarm
