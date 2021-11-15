@@ -12,11 +12,20 @@ import xgboost as xgb
 import pickle
 import warnings
 import atexit
+import os
 atexit.register(cv2.destroyAllWindows)
 warnings.simplefilter("ignore")
 
-PROCESSED_CSV = 'E:\\metadata_for_new_model4_tracked2_processed.csv'
+# PROCESSED_CSV = 'E:\\metadata_for_new_model4_tracked2_processed.csv'
 HYPERPARAMS_CSV = 'hyperparams_xgb.csv'
+
+processed_csv = pd.DataFrame()
+for file in os.listdir('training_data'):
+    csv = pd.read_csv(f'training_data\\{file}')
+    del csv['Unnamed: 0']
+    del csv['Index']
+    csv = csv[csv['Action'] != -1]
+    processed_csv = processed_csv.append(csv)
 
 
 def preprocess_data(data, mode="vect"):
@@ -89,8 +98,9 @@ def evaluate_model(model, test_features, test_labels):
 
 if __name__ == "__main__":
 
-    data = pd.read_csv(PROCESSED_CSV)
-    del data['Unnamed: 0']
+    data = processed_csv
+    print(data.shape)
+    # del data['Unnamed: 0']
 
     # try:
     #     hyperparams_metadata = pd.read_csv(HYPERPARAMS_CSV)  # Make this file if you don't have it yet
@@ -103,7 +113,7 @@ if __name__ == "__main__":
     # Remove outliers
     data = data[data["Action"] != -1]
     magn_cutoff = 20
-    # data = data[data["Magnitude"] > 0]
+    # data = data[data["Magnitude"] > 1]
     data = data[data["Magnitude"] < magn_cutoff]
 
     # Prepare data
@@ -122,7 +132,7 @@ if __name__ == "__main__":
     # X_train, X_test, y_train_dx, y_test_dx = train_test_split(inp, outp_dx, test_size=TEST_SIZE, random_state=0)
     # _, _, y_train_dy, y_test_dy = train_test_split(inp, outp_dy, test_size=TEST_SIZE, random_state=0)
     # _, _, y_train_magn, y_test_magn = train_test_split(inp, outp_magn, test_size=TEST_SIZE, random_state=0)
-    X_train, X_test, y_train, y_test = train_test_split(inp, outp, test_size=TEST_SIZE, random_state=0)
+    X_train, X_test, y_train, y_test = train_test_split(inp, outp, test_size=TEST_SIZE, random_state=1, shuffle=True)
     X_train, X_test, y_train, y_test = np.array(X_train), np.array(X_test), np.array(y_train), np.array(y_test)
     # y_test_dx, y_test_dy, y_test_magn =
 
@@ -162,7 +172,7 @@ if __name__ == "__main__":
     # xg_reg_dy.fit(X_train, y_train_dy)
     # xg_reg_magn.fit(X_train, y_train_magn)
     # xg_reg.fit(X_train, y_train)
-    multioutp = MultiOutputRegressor(xg_reg).fit(X_train, y_train)
+    multioutp = MultiOutputRegressor(xg_reg, n_jobs=-1).fit(X_train, y_train)
 
     # with open('rx_reg_dx2.pkl', 'wb') as f:
     #     pickle.dump(xg_reg_dx, f)
@@ -173,9 +183,9 @@ if __name__ == "__main__":
     # with open('rx_reg_magn2.pkl', 'wb') as f:
     #     pickle.dump(xg_reg_magn, f)
     #     # xg_reg_magn = pickle.load(f)
-    # with open('rx_reg2.pkl', 'wb') as f:
-    #     pickle.dump(xg_reg, f)
-        # xg_reg_magn = pickle.load(f)
+    with open('rx_reg2.pkl', 'wb') as f:
+        pickle.dump(multioutp, f)
+        # multioutp = pickle.load(f)
 
     # Test data
     print('Predicting...')
@@ -301,9 +311,7 @@ if __name__ == "__main__":
     img = np.ones((1200, 1200, 3))
     for i in range(len(y_test[:, 0])-1):
 
-        pos0 = np.array((int(round(X_test[i, 0])), int(round(X_test[i, 1])))) * 4
-
-        print(pos0)
+        pos0 = np.array((int(round(X_test[i, 4])), int(round(X_test[i, 5])))) * 4
 
         vect_real = np.array([y_test[i, 0]*y_test[i, 2],
                               y_test[i, 1]*y_test[i, 2]]) * 4
@@ -313,8 +321,6 @@ if __name__ == "__main__":
 
         pos_1_real = np.array(np.round(pos0 + vect_real), dtype=int)
 
-        # print(pos_1_real)
-
         vect_pred = np.array([preds[i, 0] * preds[i, 2],
                               preds[i, 1] * preds[i, 2]]) * 4
 
@@ -323,15 +329,8 @@ if __name__ == "__main__":
 
         pos_1_pred = np.array(np.round(pos0 + vect_pred), dtype=int)
 
-        # print(pos_1_pred)
-
         vect_real = vect_real / np.linalg.norm(vect_real)
         vect_pred = vect_pred / np.linalg.norm(vect_pred)
-        # print(pos0, pos_1_real, pos_1_pred)
-
-        # print(vect_pred)
-        # print(vect_real)
-        # print("_________")
 
         # Pos0
         cv2.circle(img,

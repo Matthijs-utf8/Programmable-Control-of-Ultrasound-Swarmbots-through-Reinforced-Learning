@@ -6,7 +6,7 @@ import cv2
 import tqdm
 import multiprocessing
 
-SAVE_DIR = "data_standerdized_4"
+# SAVE_DIR = "data_standerdized_4"
 NUM_CLUSTER = 50
 METADATA = "metadata_for_new_model4.csv"
 PROCESSED_METADATA = "metadata_for_new_model4_tracked2.csv"
@@ -70,48 +70,59 @@ if __name__ == "__main__":
     #      "Frequency": freq,
     #      "Action": action}]
     # )
+    metadata = metadata[metadata.values != -1]
 
     for n, datapoint in tqdm.tqdm(metadata.iterrows()):
 
         # img = cv2.imread(f"{SAVE_DIR}{datapoint['Time']}.png", cv2.IMREAD_GRAYSCALE)
-        try:
-            if datapoint['Time'] in processed_metadata['Time'].tolist():
-                continue
-            # print(datapoint['Time'])
-            img = cv2.imread(datapoint['Filename'], cv2.IMREAD_GRAYSCALE)
-            new_vpp = datapoint['Vpp']
-            new_freq = datapoint['Frequency']
-            new_action = datapoint['Action']
-
-            data = {"Time": datapoint['Time'],
-                    "Vpp": new_vpp,
-                    "Frequency": new_freq,
-                    "Action": new_action}
-
-            if new_vpp != vpp or new_freq != freq or new_action != action:
-                processed_metadata.to_csv(PROCESSED_METADATA)
-                centers, areas = env.reset(img=img)
-            else:
-                centers = env.env_step(img=img)
-
-            for i in range(len(centers)):
-                data.__setitem__(f"Cluster{i}", [centers[i], areas[i]])
-
-            processed_metadata = processed_metadata.append(data, ignore_index=True)
-
-            vpp = new_vpp
-            freq = new_freq
-            action = new_action
-
-            # Display result
-            cv2.imshow("Tracking", img)
-
-            # Exit if ESC pressed
-            k = cv2.waitKey(1) & 0xff
-            if k == 27:
-                break
-        except:
+        # try:
+        if datapoint['Time'] in processed_metadata['Time'].tolist():
+            print(f'Skip: {n}')
             continue
+
+        print(datapoint['Filename'])
+        img = cv2.imread(datapoint['Filename'], cv2.IMREAD_GRAYSCALE)
+        new_vpp = datapoint['Vpp']
+        new_freq = datapoint['Frequency']
+        new_action = datapoint['Action']
+
+        data = {"Time": datapoint['Time'],
+                "Vpp": new_vpp,
+                "Frequency": new_freq,
+                "Action": new_action}
+
+        if new_vpp != vpp or new_freq != freq or new_action != action:
+            # processed_metadata.to_csv(PROCESSED_METADATA)
+            # centers, areas = env.reset(img=img)
+            centers = [0, 0, 0]
+            areas = [0, 0, 0]
+            print(f'Reset: {n}')
+        else:
+            # centers = env.env_step(img=img)
+            centers=[0, 0, 0]
+            print(print(f'Step: {n}'))
+
+        # print(vpp, freq, action)
+
+        for i in range(len(centers)):
+            data.__setitem__(f"Cluster{i}", [centers[i], areas[i]])
+
+        processed_metadata = processed_metadata.append(data, ignore_index=True)
+
+
+        vpp = new_vpp
+        freq = new_freq
+        action = new_action
+
+        # Display result
+        cv2.imshow("Tracking", img)
+
+        # Exit if ESC pressed
+        k = cv2.waitKey(1) & 0xff
+        if k == 27:
+            break
+        # except:
+        #     continue
 
 
 
