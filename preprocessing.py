@@ -119,7 +119,7 @@ class TrackClusters:
         # Calculate center of bounding box
         self.center = [int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3])]
 
-        return self.center, self.bbox
+        return self.center, np.mean((self.bbox[2], self.bbox[3]))
 
     def update(self, img, target: tuple, verbose: bool=False):
 
@@ -135,14 +135,20 @@ class TrackClusters:
         if verbose:
 
             # Draw bounding box
-            if self.ok:
+            # if self.ok:
 
-                # Tracking success
-                p1 = (int(self.bbox[0]), int(self.bbox[1]))
-                p2 = (int(self.bbox[0] + self.bbox[2]), int(self.bbox[1] + self.bbox[3]))
-                cv2.rectangle(img, p1, p2, (255, 0, 0))
-                cv2.circle(img, target, 0, (255, 0, 0), 5)
+            # Tracking success
+            p1 = (int(self.bbox[0]), int(self.bbox[1]))
+            p2 = (int(self.bbox[0] + self.bbox[2]), int(self.bbox[1] + self.bbox[3]))
+            cv2.rectangle(img, p1, p2, (255, 0, 0))
+            cv2.circle(img, target, 0, (255, 0, 0), 5)
 
+            cv2.imshow("Tracking", img)
+
+            # Exit if ESC pressed
+            k = cv2.waitKey(1) & 0xff
+            if k == 27:
+                return
             # else:
             #
             #     # Tracking failure, reset
@@ -151,4 +157,4 @@ class TrackClusters:
 
 
 
-        return self.center, self.bbox
+        return self.center, np.mean((self.bbox[2], self.bbox[3]))

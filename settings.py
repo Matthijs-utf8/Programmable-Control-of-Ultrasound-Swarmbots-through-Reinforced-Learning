@@ -21,33 +21,34 @@ SAVE_DIR = "C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\data_standardized_4\
 IMG_SIZE = 300  # Size of environment (IMG_SIZE, IMG_SIZE)
 OFFSET_BOUNDS = 10  # Minimum Euclidean distance for reaching checkpoint
 TARGET_POINTS = [(90, 275), (25, 210)]  # Checkpoints
-UPDATE_ENV_EVERY = 16  # Update Vpp and frequency every UPDATE_ENV_EVERY steps
+UPDATE_ENV_EVERY = 100  # Update Vpp and frequency every UPDATE_ENV_EVERY steps
 
 # Model settings
 # from tensorflow.keras.models import load_model
 import pickle
-MODEL_NAME = 'predict_state'  # Name of model
-MODEL = pickle.load(open(f"C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\models\\" + MODEL_NAME, 'rb'))  # Load model
+MODEL_NAME = 'rx_reg_with_forces2.pkl'  # Name of model
+MODEL = pickle.load(open(f"C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\venv\\Include\\AI_Actuated_Micrswarm_4\\" + MODEL_NAME, 'rb'))  # Load model
+print('Model loaded :)')
 # SIZE_NORMALIZING_FACTOR = 400  # TODO --> Optimize
-VPP_STEP_SIZE = 0.2  # Step size of vpp
-FREQUENCY_STEP_SIZE = 1  # Step size of frequency
+VPP_STEP_SIZE = 0.5  # Step size of vpp
+FREQUENCY_STEP_SIZE = 2  # Step size of frequency
 
 # PID
-MEMORY_LENGTH = 16  # Length of the amount of steps used in the running average state of swarm
+MEMORY_LENGTH = UPDATE_ENV_EVERY  # Length of the amount of steps used in the running average state of swarm
 THRESHOLD_SPEED = 0.5  # Minimum equilibrium speed
-THRESHOLD_DIRECTION = 0.5  # Minimum movement direction
+THRESHOLD_DIRECTION = 0.75  # Minimum movement direction
 MIN_VPP = 2  # Minimum Vpp
-MAX_VPP = 5  # Maximum Vpp
+MAX_VPP = 8  # Maximum Vpp
 MIN_FREQUENCY = 240  # Minimum frequency
 MAX_FREQUENCY = 260  # Maximum frequency
 
 # Run settings
-MAX_STEPS = 2000  # Number of consecutive steps in an episode
+MAX_STEPS = 10000  # Number of consecutive steps in an episode
 EPISODES = 1  # Number of episodes
 
 # Data settings
 import pandas
-metadata_filename = "metadata_for_new_model4.csv"
+metadata_filename = "new_model_tests_16_11_2021.csv"
 try:
     METADATA = pandas.read_csv(metadata_filename)  # Make this file if you don't have it yet
     del METADATA['Unnamed: 0']  # Remove unwanted column

@@ -19,62 +19,64 @@ warnings.simplefilter("ignore")
 # PROCESSED_CSV = 'E:\\metadata_for_new_model4_tracked2_processed.csv'
 HYPERPARAMS_CSV = 'hyperparams_xgb.csv'
 
-processed_csv = pd.DataFrame()
-for file in os.listdir('training_data'):
-    csv = pd.read_csv(f'training_data\\{file}')
-    del csv['Unnamed: 0']
-    del csv['Index']
-    csv = csv[csv['Action'] != -1]
-    processed_csv = processed_csv.append(csv)
+# print('Loading data...')
+# processed_csv = pd.DataFrame()
+# for file in os.listdir('training_data_with_forces'):
+#     csv = pd.read_csv(f'training_data_with_forces\\{file}')
+#     del csv['Unnamed: 0']
+#     del csv['Index']
+#     csv = csv[csv['Action'] != -1]
+#     processed_csv = processed_csv.append(csv)
+processed_csv = pd.read_csv('normalized_magnitude_training_data.csv')
 
 
-def preprocess_data(data, mode="vect"):
+# def preprocess_data(data, mode="vect"):
+#
+#     # Define features and labels
+#     X = np.array(data[["Vpp", "Frequency", "Size", "Action", "X0", "Y0"]], dtype=np.float32)
+#     if mode == "vect":
+#         y = np.array(data[["dX", "dY"]], dtype=np.float32)
+#     elif mode == "magn":
+#         y = np.array(data[['Magnitude']], dtype=np.float32)
+#     else:
+#         return None
+#
+#     # Split the data
+#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+#
+#     # Return train and test data
+#     return X_train, X_test, y_train, y_test
 
-    # Define features and labels
-    X = np.array(data[["Vpp", "Frequency", "Size", "Action", "X0", "Y0"]], dtype=np.float32)
-    if mode == "vect":
-        y = np.array(data[["dX", "dY"]], dtype=np.float32)
-    elif mode == "magn":
-        y = np.array(data[['Magnitude']], dtype=np.float32)
-    else:
-        return None
 
-    # Split the data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
-
-    # Return train and test data
-    return X_train, X_test, y_train, y_test
-
-
-def train_rf(X_train,
-             y_train,
-             filename="",
-             n_estimators=200,
-             min_samples_split=10,
-             min_samples_leaf=2,
-             max_features="sqrt",
-             max_depth=100,
-             bootstrap=False):
-
-    rf = RandomForestRegressor(n_estimators=n_estimators,
-                               min_samples_split=min_samples_split,
-                               min_samples_leaf=min_samples_leaf,
-                               max_features=max_features,
-                               max_depth=max_depth,
-                               bootstrap=bootstrap,
-                               n_jobs=-1)
-
-    rf.fit(X_train, y_train)
-
-    if filename:
-        if ".pkl" not in filename:
-            with open(f"{filename}.pkl", 'wb') as f:
-                pickle.dump(rf, f)
-        else:
-            with open(filename, 'wb') as f:
-                pickle.dump(rf, f)
-
-    return rf
+# def train_rf(X_train,
+#              y_train,
+#              filename="",
+#              n_estimators=200,
+#              min_samples_split=10,
+#              min_samples_leaf=2,
+#              max_features="sqrt",
+#              max_depth=100,
+#              bootstrap=False):
+#
+#     rf = RandomForestRegressor(n_estimators=n_estimators,
+#                                min_samples_split=min_samples_split,
+#                                min_samples_leaf=min_samples_leaf,
+#                                max_features=max_features,
+#                                max_depth=max_depth,
+#                                bootstrap=bootstrap,
+#                                n_jobs=-1)
+#
+#     rf.fit(X_train, y_train)
+#
+#     if filename:
+#         if ".pkl" not in filename:
+#             with open(f"{filename}.pkl", 'wb') as f:
+#                 pickle.dump(rf, f)
+#         else:
+#             with open(filename, 'wb') as f:
+#                 pickle.dump(rf, f)
+#
+#     return rf
 
 
 def evaluate_vectorial_model(predictions, test_labels):
@@ -111,12 +113,15 @@ if __name__ == "__main__":
     #     )
 
     # Remove outliers
-    data = data[data["Action"] != -1]
-    magn_cutoff = 20
-    # data = data[data["Magnitude"] > 1]
-    data = data[data["Magnitude"] < magn_cutoff]
+    # data = data[data["Action"] != -1]
+    # magn_cutoff = 20
+    # # data = data[data["Magnitude"] > 1]
+    # data = data[data["Magnitude"] < magn_cutoff]
 
     # Prepare data
+    # inputs = [f'Force_{n}' for n in range(50)]
+    # for i in ["Vpp", "Frequency", "Size", "Action"]:
+        # inputs.append(i)
     inp = data[["Vpp", "Frequency", "Size", "Action", "X0", "Y0"]]
     # outp_dx = data[['dX']]
     # outp_dy = data[['dY']]
@@ -132,12 +137,12 @@ if __name__ == "__main__":
     # X_train, X_test, y_train_dx, y_test_dx = train_test_split(inp, outp_dx, test_size=TEST_SIZE, random_state=0)
     # _, _, y_train_dy, y_test_dy = train_test_split(inp, outp_dy, test_size=TEST_SIZE, random_state=0)
     # _, _, y_train_magn, y_test_magn = train_test_split(inp, outp_magn, test_size=TEST_SIZE, random_state=0)
-    X_train, X_test, y_train, y_test = train_test_split(inp, outp, test_size=TEST_SIZE, random_state=1, shuffle=True)
+    X_train, X_test, y_train, y_test = train_test_split(inp, outp, test_size=TEST_SIZE, random_state=1, shuffle=True)[:4]
     X_train, X_test, y_train, y_test = np.array(X_train), np.array(X_test), np.array(y_train), np.array(y_test)
     # y_test_dx, y_test_dy, y_test_magn =
 
     params = {"objective": "reg:squarederror", 'colsample_bytree': 0.9, 'learning_rate': 0.5,
-              'max_depth': 50, 'alpha': 1, 'lambda': 1}
+              'max_depth': 10, 'alpha': 1, 'lambda': 1}
     #
     # # cv_results = xgb.cv(dtrain=data_dmatrix, params=params, nfold=3,
     # #                     num_boost_round=50, early_stopping_rounds=10, metrics="rmse", as_pandas=True, seed=123)
@@ -149,8 +154,8 @@ if __name__ == "__main__":
     #                           max_depth=50, alpha=1, n_estimators=100, n_jobs=6)
     # xg_reg_magn = xgb.XGBRegressor(objective='reg:squarederror', colsample_bytree=0.9, learning_rate=0.5,
     #                           max_depth=50, alpha=1, n_estimators=100, n_jobs=6)
-    xg_reg = xgb.XGBRegressor(objective='reg:squarederror', colsample_bytree=0.9, learning_rate=0.5,
-                              max_depth=50, alpha=1, n_estimators=100, n_jobs=6)
+    xg_reg = xgb.XGBRegressor(objective='reg:squarederror', colsample_bytree=0.9, learning_rate=0.7,
+                              max_depth=50, alpha=1, n_estimators=100, n_jobs=-1)
 
 
 
@@ -183,8 +188,8 @@ if __name__ == "__main__":
     # with open('rx_reg_magn2.pkl', 'wb') as f:
     #     pickle.dump(xg_reg_magn, f)
     #     # xg_reg_magn = pickle.load(f)
-    with open('rx_reg2.pkl', 'wb') as f:
-        pickle.dump(multioutp, f)
+    # with open('rx_reg_with_forces2.pkl', 'wb') as f:
+        # pickle.dump(multioutp, f)
         # multioutp = pickle.load(f)
 
     # Test data
@@ -368,6 +373,9 @@ if __name__ == "__main__":
                    3)
         cv2.imshow("Image", img)
         cv2.waitKey(0)
+
+
+
 
 
 

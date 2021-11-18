@@ -26,26 +26,31 @@ def get_action(size: int, pos_x: int, pos_y: int, offset_to_target: tuple):
     """
 
     # Generate potential combinations of inputs to the model
-    steps = [[Vpp, frequency, size, action, pos_x, pos_y]
+    steps = np.array([[Vpp, frequency, size, action]
              for Vpp in np.linspace(MIN_VPP, MAX_VPP, int((MAX_VPP - MIN_VPP) / VPP_STEP_SIZE + 1))
              for frequency in np.linspace(MIN_FREQUENCY, MAX_FREQUENCY, int((MAX_FREQUENCY - MIN_FREQUENCY) / FREQUENCY_STEP_SIZE + 1))
-             for action in range(4)]
+             for action in range(4)])
 
     # Map all combinations to model to get the predicted motion
     # results = np.array(list(map(predict_state, steps)))  # TODO --> Optimize
+    print('Predicting...')
     results = MODEL.predict(steps)
 
     # Find the Vpp and frequency that belong to the best inputs
     # 'Best' is defined as the input that brings the robot closest to the target in either the x or y direction
-    Vpp, frequency, size, action, pos_x, pos_y = steps[np.abs(results - np.max(np.abs(offset_to_target))).argmin()]
+    direction = np.array((results[:, 0], results[:, 1]))
+    direction = direction / np.linalg.norm(direction, axis=0)
+    results = direction*results[:, 2]
+
+    Vpp, frequency, size, action = steps[np.abs(np.linalg.norm(results.T - offset_to_target, axis=1)).argmin()]
 
     # Choose one of four piezos
     # IMPORTANT --> 0: dx > 0 (move left), 1: dy > 0 (move up), 2: dx < 0 (move right), 3: dy < 0 (move down)
-    action = np.argmax(np.abs(offset_to_target))
-    if np.sign(offset_to_target[action]) == -1:
-        action += 2
+    # action = np.argmax(np.abs(offset_to_target))
+    # if np.sign(offset_to_target[action]) == -1:
+    #     action += 2
 
-    return action, Vpp, frequency
+    return int(action), Vpp, frequency
 
 
 def walk_to_pixel(blob_pos, target_pos):

@@ -167,6 +167,8 @@ class TranslatorLeica:
 
         # Return translated message
         translated = self.msg_to_coord(received)
+        # self.observer.write(bytearray([71, 58]))
+        # self.reset()
         time.sleep(SLEEP_TIME)
 
         return translated
@@ -303,18 +305,15 @@ class FunctionGenerator:
 class SwarmEnv:
 
     def __init__(self,
-                 source=VideoStreamHammamatsu(),
-                 actuator=ActuatorPiezos(),
-                 translator=TranslatorLeica(),
-                 function_generator=FunctionGenerator(),
                  target_points=TARGET_POINTS,
                  metadata=METADATA):
 
         # Initialize devices
-        self.source = source  # Camera
-        self.actuator = actuator  # Piezo's
-        self.translator = translator  # Leica xy-platform
-        self.function_generator = function_generator  # Function generator
+        self.source = VideoStreamHammamatsu()  # Camera
+        self.actuator = ActuatorPiezos()  # Piezo's
+        self.translator = TranslatorLeica()  # Leica xy-platform
+        self.function_generator = FunctionGenerator()  # Function generator
+
 
         # Metadatastructure
         self.metadata = metadata
@@ -330,6 +329,7 @@ class SwarmEnv:
 
         # Initialize memory
         self.memory = deque(maxlen=MEMORY_LENGTH)
+        self.magic_vpp = 0
 
         # Set exit condition
         atexit.register(self.close)
@@ -418,6 +418,7 @@ class SwarmEnv:
         # Draw bbox around swarm to track
         bbox = np.array(np.array(self.draw_bbox(img=img)), dtype=int).tolist()
         # bbox = [85, 265, 10, 10]
+        print(bbox)
 
         # Manualy add target points
         targets = np.array(np.array(self.draw_targets(img=img)), dtype=int).tolist()
@@ -460,25 +461,41 @@ class SwarmEnv:
         # Return centroids of n amount of swarms
         return self.state
 
-    def env_step(self, action: int):
+    def env_step(self):
 
         # Only update function generator and arduino every UPDATE_ENV_EVERY steps
         if not self.step % UPDATE_ENV_EVERY:
+
+            if self.step != 0:
+                print(f'FPS: {1 / ((time.time() - self.t0) / UPDATE_ENV_EVERY)}')
+
+            self.actuator.arduino.write(b"9")
 
             # Calculate vpp and frequency
             # self.set_vpp_and_frequency()
 
             # Deep learning model code
             offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
-            action, self.vpp, self.frequency = get_action(size=self.size,
+            self.action, self.vpp, self.frequency = get_action(size=self.size,
                                                           pos_x=self.state[0],
                                                           pos_y=self.state[1],
                                                           offset_to_target=offset)
+
+            # self.action = (self.action + 2) % 4
+
+            # self.action = np.argmax(np.abs(offset))
+            # if np.sign(offset[self.action]) == -1:
+            #     self.action += 2
+
+            print(self.action, self.vpp, self.frequency, offset)
+
             self.function_generator.set_vpp(self.vpp)
             self.function_generator.set_frequency(self.frequency)
 
             # Actuate piezos
-            self.actuator.move(action)
+            self.actuator.move(self.action)
+
+            self.t0 = time.time()
 
         # Get time
         self.now = round(time.time(), 3)
@@ -493,8 +510,8 @@ class SwarmEnv:
         # Get the new state
         self.state, self.size = self.tracker.update(img=img,  # Read image
                                                     target=self.target_points[self.target_idx],  # For verbose purposes
-                                                    action=action,
                                                     verbose=True)  # Show live tracking
+
         # Exception handling
         if not self.state:
             self.state = (0, 0)
@@ -510,7 +527,7 @@ class SwarmEnv:
              "Vpp": self.vpp,
              "Frequency": self.frequency,
              "Size": self.size,
-             "Action": action,
+             "Action": self.action,
              "State": self.state,
              "Target": self.target_points[self.target_idx],
              "Step": self.step,
@@ -532,6 +549,8 @@ class SwarmEnv:
         # Add step
         self.step += 1
 
+
+
         # Return centroids of n amount of swarms
         return self.state
 
@@ -544,7 +563,8 @@ class SwarmEnv:
                            (np.sqrt(2)*0.5*IMG_SIZE)) * \
                            (MAX_VPP - MIN_VPP) + \
                            MIN_VPP
-        # print(self.vpp)
+        self.vpp += self.magic_vpp
+        self.vpp = min(self.vpp, MAX_VPP)
         self.function_generator.set_vpp(vpp=self.vpp)
 
         # Calculate average direction of target position
@@ -565,11 +585,17 @@ class SwarmEnv:
 
             # If movement is slow
             if np.average(movement_speeds) < THRESHOLD_SPEED:
-                self.frequency += 1
+                print('We are fucking stationary')
+                self.frequency += 4
+                print('Magic is happening')
+                self.magic_vpp += 1
 
             # If movement is not in direction of target
             elif np.any(np.abs(avg_direction_target - avg_direction_movement) > THRESHOLD_DIRECTION):
-                self.frequency += 1
+                print('We are fucking crookec mate')
+                self.frequency += 2
+            else:
+                self.magic_vpp = 0
 
             # Make sure the frequency does not go out of bounds
             if self.frequency > MAX_FREQUENCY:
@@ -650,11 +676,26 @@ class SwarmEnv:
 # if __name__ == '__main__':
 #
 #     # env = DataGatherEnv()
-#     fg = FunctionGenerator()
+#     # fg = FunctionGenerator()
 #
-#     t0 = time.time()
-#     for n in range(1, 2):
-#         print(n)
-#         fg.set_vpp(n)
-#     print((time.time() - t0))
+#     leica = TranslatorLeica()
+#     # leica.pos = np.array(0, 0)
+#     print(leica.pos)
+#     leica.move_increment((100, 100))
+#     print(leica.pos)
+#     leica.move_increment((100, 100))
+#     print(leica.pos)
+#     leica.move_increment((100, 100))
+#     print(leica.pos)
+#     leica.move_increment((100, 100))
+
+
+    # leica.reset()
+    # print(leica.get_motor_pos(2))
+    # print(leica.get_motor_pos(1))
+    # t0 = time.time()
+    # for n in range(1, 2):
+    #     print(n)
+    #     fg.set_vpp(n)
+    # print((time.time() - t0))
 
