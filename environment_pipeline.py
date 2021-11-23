@@ -331,8 +331,7 @@ class SwarmEnv:
         self.memory = deque(maxlen=MEMORY_LENGTH)
         self.magic_vpp = 0
 
-        # Set exit condition
-        atexit.register(self.close)
+
 
     def draw_bbox(self, img):
 
@@ -450,13 +449,14 @@ class SwarmEnv:
              "OFFSET_BOUNDS": OFFSET_BOUNDS,
              "MEMORY_LENGTH": MEMORY_LENGTH,
              "THRESHOLD_SPEED": THRESHOLD_SPEED,
-             "THRESHOLD_DIRECTION": THRESHOLD_DIRECTION,
              "MIN_VPP": MIN_VPP,
              "MAX_VPP": MAX_VPP,
-             "MIN_FREQUENCY": MIN_FREQUENCY,
-             "MAX_FREQUENCY": MAX_FREQUENCY},
+             "MIN_FREQUENCY": MIN_FREQUENCY},
              ignore_index=True
         )
+
+        # Set exit condition
+        atexit.register(self.close)
 
         # Return centroids of n amount of swarms
         return self.state
@@ -466,31 +466,35 @@ class SwarmEnv:
         # Only update function generator and arduino every UPDATE_ENV_EVERY steps
         if not self.step % UPDATE_ENV_EVERY:
 
+            self.metadata.to_csv(metadata_filename)
+
             if self.step != 0:
                 print(f'FPS: {1 / ((time.time() - self.t0) / UPDATE_ENV_EVERY)}')
 
             self.actuator.arduino.write(b"9")
 
-            # Calculate vpp and frequency
-            # self.set_vpp_and_frequency()
+
 
             # Deep learning model code
             offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
-            self.action, self.vpp, self.frequency = get_action(size=self.size,
-                                                          pos_x=self.state[0],
-                                                          pos_y=self.state[1],
-                                                          offset_to_target=offset)
+            # # self.action, self.vpp, self.frequency = get_action(size=self.size,
+            # #                                               pos_x=self.state[0],
+            # #                                               pos_y=self.state[1],
+            # #                                               offset_to_target=offset)
+            #
+            # # self.action = (self.action + 2) % 4
+            #
+            self.action = np.argmax(np.abs(offset))
+            if np.sign(offset[self.action]) == -1:
+                self.action += 2
 
-            # self.action = (self.action + 2) % 4
-
-            # self.action = np.argmax(np.abs(offset))
-            # if np.sign(offset[self.action]) == -1:
-            #     self.action += 2
-
-            print(self.action, self.vpp, self.frequency, offset)
-
-            self.function_generator.set_vpp(self.vpp)
-            self.function_generator.set_frequency(self.frequency)
+            # Calculate vpp and frequency
+            self.set_vpp_and_frequency()
+            #
+            # # print(self.action, self.vpp, self.frequency, offset)
+            #
+            # self.function_generator.set_vpp(self.state_to_vpp(size=self.size, action=self.action))
+            # self.function_generator.set_frequency(self.frequency)
 
             # Actuate piezos
             self.actuator.move(self.action)
@@ -549,10 +553,17 @@ class SwarmEnv:
         # Add step
         self.step += 1
 
-
-
         # Return centroids of n amount of swarms
         return self.state
+
+
+
+    def size_to_vpp(self, size, max_size=30):
+        return size / (30 / 2)
+
+    def state_to_vpp(self, size, action):
+        action_to_vpp = {0: 3, 1: 1, 2: 2, 3: 3}
+        return min(MIN_VPP + MIN_VPP * size_to_vpp(size) * action_to_vpp[action], MAX_VPP)
 
     # TODO --> There is a lot of double euclidean distance calculation in this function now. Maybe make this smarter???
     def set_vpp_and_frequency(self):
@@ -565,6 +576,14 @@ class SwarmEnv:
                            MIN_VPP
         self.vpp += self.magic_vpp
         self.vpp = min(self.vpp, MAX_VPP)
+
+        if self.action == 1:
+            self.vpp = self.vpp / 4
+            self.function_generator.set_vpp(vpp=self.vpp)
+        elif self.action == 2:
+            self.vpp = self.vpp / 2
+            self.function_generator.set_vpp(vpp=self.vpp)
+
         self.function_generator.set_vpp(vpp=self.vpp)
 
         # Calculate average direction of target position
@@ -585,14 +604,14 @@ class SwarmEnv:
 
             # If movement is slow
             if np.average(movement_speeds) < THRESHOLD_SPEED:
-                print('We are fucking stationary')
+                print('We are stationary')
                 self.frequency += 4
                 print('Magic is happening')
                 self.magic_vpp += 1
 
             # If movement is not in direction of target
             elif np.any(np.abs(avg_direction_target - avg_direction_movement) > THRESHOLD_DIRECTION):
-                print('We are fucking crookec mate')
+                print('We are crooked')
                 self.frequency += 2
             else:
                 self.magic_vpp = 0
@@ -609,6 +628,7 @@ class SwarmEnv:
         self.metadata.to_csv(metadata_filename)  # Save metadata
         self.actuator.close()  # Close communication
         self.translator.close()  # Close communication
+        self.function_generator.turn_off()
         cv2.destroyAllWindows()
 
 # class DataGatherEnv:

@@ -3,6 +3,7 @@ import time
 from settings import *
 from pynput import keyboard
 import datetime
+# import tektronix_func_gen as tfg
 
 # Initiate contact with arduino
 arduino = serial.Serial(port=SERIAL_PORT_ARDUINO, baudrate=BAUDRATE_ARDUINO)

@@ -122,7 +122,7 @@ if __name__ == "__main__":
     # inputs = [f'Force_{n}' for n in range(50)]
     # for i in ["Vpp", "Frequency", "Size", "Action"]:
         # inputs.append(i)
-    inp = data[["Vpp", "Frequency", "Size", "Action", "X0", "Y0"]]
+    inp = data[["Vpp", "Frequency", "Size", "Action"]]
     # outp_dx = data[['dX']]
     # outp_dy = data[['dY']]
     # outp_magn = data[['Magnitude']]
