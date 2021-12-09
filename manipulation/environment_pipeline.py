@@ -1,8 +1,7 @@
 import numpy as np
-from preprocessing import TrackClusters
+from cluster_detection_and_tracking import TrackClusters
 import cv2
 import datetime
-import vlc
 import time
 import serial
 from settings import *
@@ -14,7 +13,9 @@ import pyvisa as visa
 import pymmcore
 import tqdm
 import pandas as pd
-from model import get_action
+import tektronix_func_gen as tfg
+import atexit
+from model import calc_action
 
 
 class VideoStreamHammamatsu:
@@ -51,6 +52,7 @@ class VideoStreamHammamatsu:
 
         # Resize image
         img = cv2.resize(img, size)
+        # img = np.array(img / np.max(img))
 
         # Save image
         cv2.imwrite(f_name, img)
@@ -62,6 +64,7 @@ class VideoStreamHammamatsu:
 class VideoStreamKronos:
 
     def __init__(self, url=STREAM_URL):
+        import vlc
 
         # Define VLC instance
         instance = vlc.Instance()
@@ -164,6 +167,8 @@ class TranslatorLeica:
 
         # Return translated message
         translated = self.msg_to_coord(received)
+        # self.observer.write(bytearray([71, 58]))
+        # self.reset()
         time.sleep(SLEEP_TIME)
 
         return translated
@@ -260,83 +265,176 @@ class TranslatorLeica:
 class FunctionGenerator:
 
     def __init__(self, instrument_descriptor=INSTR_DESCRIPTOR):
-        rm = visa.ResourceManager()  # Open resource manager
-        if not instrument_descriptor:
-            instrument_descriptor = rm.list_resources()[-1]  # TODO --> Automate this to not be hardcoded
-        self.AFG3000 = rm.open_resource(instrument_descriptor)
-        # self.AFG3000.write('*RST')  # Reset AFG
+        self.AFG3000 = tfg.FuncGen(instrument_descriptor).ch1
 
-    def reset(self):
-        self.set_vpp(vpp=MIN_VPP)
-        self.set_frequency(frequency=MIN_FREQUENCY)
+    def reset(self, vpp=1, frequency=1):
+
+        self.set_vpp(vpp=vpp)
+        self.set_frequency(frequency=frequency)
+        self.set_waveform('SQUARE')
+        self.turn_on()
+
+        print(f'FG settings: {self.AFG3000.get_settings()}')
 
     def set_vpp(self, vpp: float):
-        self.AFG3000.write(f'source1:voltage:amplitude {vpp}')  # Set vpp
+        self.AFG3000.set_amplitude(vpp)
+
+
+    def get_vpp(self):
+        return self.AFG3000.get_amplitude()
 
     def set_frequency(self, frequency: float):
-        self.AFG3000.write(f'source1:Frequency {frequency*1000}')  # Set frequency (in kHz)
+        self.AFG3000.set_frequency(frequency * 1e3)
+
+    def get_frequency(self):
+        return self.AFG3000.get_frequency()
+
+    def set_waveform(self, waveform: str):
+        assert waveform in ['SIN', 'SQUARE', 'RAMP'], f'Invalid waveform: {waveform}'
+        self.AFG3000.set_function(waveform)
+
+    def get_waveform(self):
+        return self.AFG3000.get_function()
+
+    def turn_on(self):
+        self.AFG3000.set_output("ON")
+
+    def turn_off(self):
+        self.AFG3000.set_output("OFF")
 
 
-class SwarmEnvTrackBiggestCluster:
+class SwarmEnv:
 
     def __init__(self,
-                 source=VideoStreamHammamatsu(),
-                 actuator=ActuatorPiezos(),
-                 translator=TranslatorLeica(),
-                 function_generator=FunctionGenerator(),
                  target_points=TARGET_POINTS,
                  metadata=METADATA):
 
         # Initialize devices
-        self.source = source  # Camera
-        self.actuator = actuator  # Piezo's
-        self.translator = translator  # Leica xy-platform
-        self.function_generator = function_generator  # Function generator
+        self.source = VideoStreamHammamatsu()  # Camera
+        self.actuator = ActuatorPiezos()  # Piezo's
+        self.translator = TranslatorLeica()  # Leica xy-platform
+        self.function_generator = FunctionGenerator()  # Function generator
 
         # Metadatastructure
         self.metadata = metadata
+        self.model = calc_action
 
-        # Initialize Vpp and frequency to their minima
-        self.function_generator.reset()
-        self.vpp = MIN_VPP
-        self.frequency = MIN_FREQUENCY  # kHz
+        # Initialize Vpp and frequency
+        self.vpp = 6
+        self.frequency = 2000  # kHz
+        self.function_generator.reset(vpp=self.vpp,
+                                      frequency=self.frequency)
 
         # Keep track of target point (idx in target_points)
         self.target_points = target_points
         self.target_idx = 0
 
-        # Initialize memory
-        self.memory = deque(maxlen=10)
+        # Set exit condition
+        atexit.register(self.close)
 
-    def reset(self, bbox):
+    def draw_bbox(self, img):
+        """
+        Draw a bounding box around swarm that you would like to track
+        Controls:   drag & drop with mouse
+                    Enter to continue, backspace to reset
+        :param img: Image to draw in bounding box
+        :return:    bounding box
+        """
+        refPt = []
 
-        # Set env steps to 0 and reset function generator
+        def click_and_crop(event, x, y, flags, param):
+            if event == cv2.EVENT_LBUTTONDOWN:
+                refPt.append((x, y))
+            elif event == cv2.EVENT_LBUTTONUP:
+                refPt.append((x, y))
+                cv2.rectangle(img, refPt[0], refPt[1], (0, 255, 0), 1)
+                cv2.imshow("image", img)
+
+        clone = img.copy()
+        cv2.namedWindow("image")
+        cv2.setMouseCallback("image", click_and_crop)
+
+        while True:
+            # display the image and wait for a keypress
+            cv2.imshow("image", img)
+            key = cv2.waitKey(0)
+            # If backspace, reset
+            if key == ord("\x08"):
+                img = clone.copy()
+            # If enter, break loop
+            elif key == ord("\r"):
+                break
+
+        cv2.destroyAllWindows()
+
+        return [refPt[0][0], refPt[0][1], refPt[1][0] - refPt[0][0], refPt[1][1] - refPt[0][1]]
+
+    def draw_targets(self, img):
+        """
+        Click target point on the image that the algorithm follows consequetively
+        Controls:   Click points with mouse
+                    Enter to continue, backspace to reset
+        :param img: Image to click target point on
+        :return:    List of target points
+        """
+        refPt = []
+
+        def click_and_crop(event, x, y, flags, param):
+
+            if event == cv2.EVENT_LBUTTONDOWN:
+                refPt.append((x, y))
+                cv2.circle(img, (x, y), 0, (255, 120, 0), 5)
+                cv2.imshow("image", img)
+
+
+        clone = img.copy()
+        cv2.namedWindow("image")
+        cv2.setMouseCallback("image", click_and_crop)
+
+        while True:
+            # display the image and wait for a keypress
+            cv2.imshow("image", img)
+            key = cv2.waitKey(0)
+            # if the 'r' key is pressed, reset the cropping region
+            if key == ord("\x08"):
+                img = clone.copy()
+            # If enter, break loop
+            elif key == ord("\r"):
+                break
+
+        cv2.destroyAllWindows()
+
+        return refPt
+
+    def reset(self):
+
+        # Set env steps to 0
         self.step = 0
-        self.function_generator.set_vpp(vpp=self.vpp)
-        self.function_generator.set_frequency(frequency=self.frequency)
-
-        # Initialize tracking algorithm
-        self.tracker = TrackClusters(bbox=bbox)
-
-        # Initialize function generator
-        self.function_generator.reset()
 
         # Get time
         self.now = round(time.time(), 3)
 
         # Define file name
-        filename = SAVE_DIR + f"{self.now}-reset.png"
+        filename = SNAPSHOTS_SAVE_DIR + f"{self.now}-reset.png"
 
         # Snap a frame from the video stream and save
-        img = self.source.snap(f_name=filename)
-        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # Still need to optimize this
+        self.source.snap(f_name=filename)
+        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
+
+        # Draw bbox around swarm to track
+        bbox = np.array(np.array(self.draw_bbox(img=img)), dtype=int).tolist()
+
+        # Manualy add target points
+        targets = np.array(np.array(self.draw_targets(img=img)), dtype=int).tolist()
+        if targets:
+            self.target_points = targets
+            self.target_idx = 0
+
+        # Initialize tracking algorithm
+        self.tracker = TrackClusters(bbox=bbox)
 
         # Get the centroid of (biggest) swarm
         self.state, self.size = self.tracker.reset(img=img)
-
-        # Exception handling
-        if not self.state:
-            self.state = (0, 0)
 
         # Add metadata to dataframe
         self.metadata = self.metadata.append(
@@ -348,89 +446,70 @@ class SwarmEnvTrackBiggestCluster:
              "Action": None,
              "State": self.state,
              "Target": self.target_points[self.target_idx],
-             "Step": self.step},
+             "Step": self.step,
+             "OFFSET_BOUNDS": OFFSET_BOUNDS},
              ignore_index=True
         )
 
         # Return centroids of n amount of swarms
         return self.state
 
-    def map(self):
-        return
+    def env_step(self):
 
-    # TODO --> Improve capability of PID
-    def set_vpp_and_frequency(self, dist_from_target):
-
-        # Set Vpp based on distance from target
-        self.vpp = (dist_from_target / IMG_SIZE) * (MAX_VPP - MIN_VPP) + MIN_VPP
-        self.function_generator.set_vpp(vpp=self.vpp)
-
-        # Set frequency if we don't move at a certain speed
-        if len(self.memory) > 1:
-            if np.average(self.memory) < THRESHOLD_SPEED:
-                self.frequency += 1
-                if self.frequency > MAX_FREQUENCY:
-                    self.frequency = MIN_FREQUENCY
-                self.function_generator.set_frequency(frequency=self.frequency)
-                time.sleep(0.1)  # TODO --> Optimize
-
-    def env_step(self, action: int):
-
-        # Calculate distance from target position
-        dist_from_target = np.linalg.norm(np.array(self.state) - np.array(self.target_points[self.target_idx]))
-
-        # Only update function generator and arduino every UPDATE_ENV_EVERY steps
-        if not self.step % UPDATE_ENV_EVERY:
-
-            # Calculate vpp and frequency
-            self.set_vpp_and_frequency(dist_from_target=dist_from_target)
-
-            # Deep learning model code
-            # offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
-            # action, self.vpp, self.frequency = get_action(size=self.size, offset_to_target=offset)
-            # self.function_generator.set_vpp(self.vpp)
-            # self.function_generator.set_frequency(self.frequency)
-
-            # Actuate piezos
-            self.actuator.move(action)
+        # Save metadata every X amount of steps
+        if not self.step % 50:
+            self.metadata.to_csv(METADATA_FILENAME)
 
         # Get time
         self.now = round(time.time(), 3)
 
         # Define file name
-        filename = SAVE_DIR + f"{self.now}.png"
+        filename = SNAPSHOTS_SAVE_DIR + f"{self.now}.png"
 
         # Snap a frame from the video stream
         self.source.snap(f_name=filename)
-        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # TODO --> Get rid of double imwrite/imread in source.snap and this line
+        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # TODO --> check if this works
 
         # Get the new state
         self.state, self.size = self.tracker.update(img=img,  # Read image
                                                     target=self.target_points[self.target_idx],  # For verbose purposes
                                                     verbose=True)  # Show live tracking
-        # Exception handling
-        if not self.state:
-            self.state = (0, 0)
 
-        # Add distance traveled to memory
-        self.memory.append(np.linalg.norm(self.memory[-1] - np.array(self.state)))
+        # Only update function generator and arduino every UPDATE_ENV_EVERY steps
+        if not self.step % UPDATE_ENV_EVERY:
+
+            if self.step != 0:
+                print(f'FPS: {1 / ((time.time() - self.t0) / UPDATE_ENV_EVERY)}')
+
+            offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
+            self.action = self.model(pos0=self.state,
+                                     offset=offset,
+                                     mode='naive')
+
+            self.function_generator.set_frequency(frequency=PIEZO_RESONANCES[self.action])
+
+            # Actuate piezos
+            self.actuator.move(self.action)
+
+            self.t0 = time.time()
 
         # Add metadata to dataframe
         self.metadata = self.metadata.append(
-          {"Filename": filename,
-           "Time": self.now,
-           "Vpp": self.vpp,
-           "Frequency": self.frequency,
-           "Size": self.size,
-           "Action": action,
-           "State": self.state,
-           "Target": self.target_points[self.target_idx],
-           "Step": self.step},
-            ignore_index=True
+            {"Filename": filename,
+             "Time": self.now,
+             "Vpp": self.vpp,
+             "Frequency": self.frequency,
+             "Size": self.size,
+             "Action": self.action,
+             "State": self.state,
+             "Target": self.target_points[self.target_idx],
+             "Step": self.step,
+             "OFFSET_BOUNDS": OFFSET_BOUNDS},
+             ignore_index=True
         )
 
         # # Move microscope to next point if offset goes into bounds
-        if dist_from_target < OFFSET_BOUNDS:
+        if np.linalg.norm(offset) < OFFSET_BOUNDS:
             self.target_idx = (self.target_idx + 1) % (len(self.target_points))
 
         # Add step
@@ -440,7 +519,66 @@ class SwarmEnvTrackBiggestCluster:
         return self.state
 
     def close(self):
-        print(f'Final bbox: {self.tracker.bbox}')  # Print final bounding box, for if we want to continue tracking the same swarm
-        self.metadata.to_csv('metadata.csv')  # Save metadata
+        self.metadata.to_csv(METADATA_FILENAME)  # Save metadata
         self.actuator.close()  # Close communication
         self.translator.close()  # Close communication
+        self.function_generator.turn_off()
+        cv2.destroyAllWindows()
+
+
+class DataGatherEnv:
+
+    def __init__(self,
+                 metadata=METADATA):
+
+        # Initialize devices
+        self.source = VideoStreamHammamatsu()  # Camera
+        self.actuator = ActuatorPiezos()  # Piezo's
+        self.translator = TranslatorLeica()  # Leica xy-platform
+        self.function_generator = FunctionGenerator()  # Function generator
+
+        self.function_generator.set_waveform('SQUARE')
+        self.function_generator.turn_on()
+
+        # Metadata structure
+        self.metadata = pd.DataFrame(
+            {"Filename": "Initial",
+             "Time": (None, None),
+             "Vpp": None,
+             "Frequency": None,
+             "Action": None}
+        )
+
+        # Set exit condition
+        atexit.register(self.close)
+
+    def env_step(self, action, vpp, frequency):
+
+        # Get time
+        self.now = round(time.time(), 3)
+
+        # Define file name
+        filename = SAVE_DIR + f"{self.now}.png"
+
+        # Snap a frame from the video stream
+        self.source.snap(f_name=filename)
+        img = cv2.imread(filename)
+        cv2.imshow('Image', img)
+        cv2.waitKey(1)
+
+        # Add metadata to dataframe
+        self.metadata = self.metadata.append(
+            {"Filename": filename,
+             "Time": self.now,
+             "Vpp": vpp,
+             "Frequency": frequency,
+             "Action": action},
+             ignore_index=True
+        )
+
+    def close(self):
+        self.metadata.to_csv(metadata_filename)  # Save metadata
+        self.actuator.close()  # Close communication
+        self.translator.close()  # Close communication
+        self.function_generator.turn_off()
+        cv2.destroyAllWindows()
