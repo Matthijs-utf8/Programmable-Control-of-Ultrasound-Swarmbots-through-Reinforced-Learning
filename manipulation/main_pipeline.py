@@ -10,7 +10,6 @@ Action: 2 --> Relay_channel: 3 --> Out: Blue --> Piezo: Left --> Move: Right
 Action: 3 --> Relay_channel: 4 --> Out: White --> Piezo: Top --> Move: Down
 '''
 
-
 def main():
 
     # Initiate environment and action model
@@ -23,8 +22,8 @@ def main():
     # Loop through steps
     for _ in tqdm(range(MAX_STEPS)):
 
-        action = model(state, offset)
-        state = env.env_step()
+        state, offset = env.env_step()
+        # action = model(state, offset)
 
     env.close()
 

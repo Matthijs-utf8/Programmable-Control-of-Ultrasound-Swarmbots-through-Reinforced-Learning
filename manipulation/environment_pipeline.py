@@ -13,7 +13,6 @@ import pyvisa as visa
 import pymmcore
 import tqdm
 import pandas as pd
-from model import get_action
 import tektronix_func_gen as tfg
 import atexit
 from model import calc_action
@@ -268,7 +267,7 @@ class FunctionGenerator:
     def __init__(self, instrument_descriptor=INSTR_DESCRIPTOR):
         self.AFG3000 = tfg.FuncGen(instrument_descriptor).ch1
 
-    def reset(self, vpp=0, frequency=1):
+    def reset(self, vpp=1, frequency=1):
 
         self.set_vpp(vpp=vpp)
         self.set_frequency(frequency=frequency)
@@ -321,7 +320,7 @@ class SwarmEnv:
         self.model = calc_action
 
         # Initialize Vpp and frequency
-        self.vpp = 20
+        self.vpp = 6
         self.frequency = 2000  # kHz
         self.function_generator.reset(vpp=self.vpp,
                                       frequency=self.frequency)
@@ -329,9 +328,6 @@ class SwarmEnv:
         # Keep track of target point (idx in target_points)
         self.target_points = target_points
         self.target_idx = 0
-
-        # Initialize memory
-        # self.memory = deque(maxlen=MEMORY_LENGTH)
 
         # Set exit condition
         atexit.register(self.close)
@@ -415,9 +411,6 @@ class SwarmEnv:
         # Set env steps to 0
         self.step = 0
 
-        # Initialize function generator
-        self.function_generator.reset()
-
         # Get time
         self.now = round(time.time(), 3)
 
@@ -443,9 +436,6 @@ class SwarmEnv:
         # Get the centroid of (biggest) swarm
         self.state, self.size = self.tracker.reset(img=img)
 
-        # Add state to memory
-        # self.memory.append(np.array(self.state))
-
         # Add metadata to dataframe
         self.metadata = self.metadata.append(
             {"Filename": filename,
@@ -468,13 +458,13 @@ class SwarmEnv:
 
         # Save metadata every X amount of steps
         if not self.step % 50:
-            self.metadata.to_csv(metadata_filename)
+            self.metadata.to_csv(METADATA_FILENAME)
 
         # Get time
         self.now = round(time.time(), 3)
 
         # Define file name
-        filename = SAVE_DIR + f"{self.now}.png"
+        filename = SNAPSHOTS_SAVE_DIR + f"{self.now}.png"
 
         # Snap a frame from the video stream
         self.source.snap(f_name=filename)
@@ -494,7 +484,7 @@ class SwarmEnv:
             offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
             self.action = self.model(pos0=self.state,
                                      offset=offset,
-                                     mode='avg')
+                                     mode='naive')
 
             self.function_generator.set_frequency(frequency=PIEZO_RESONANCES[self.action])
 
@@ -502,9 +492,6 @@ class SwarmEnv:
             self.actuator.move(self.action)
 
             self.t0 = time.time()
-
-        # Add state to memory
-        # self.memory.append(np.array(self.state))
 
         # Add metadata to dataframe
         self.metadata = self.metadata.append(
@@ -532,8 +519,7 @@ class SwarmEnv:
         return self.state
 
     def close(self):
-        print(f'Final bbox: {self.tracker.bbox}')  # Print final bounding box, for if we want to continue tracking the same swarm
-        self.metadata.to_csv(metadata_filename)  # Save metadata
+        self.metadata.to_csv(METADATA_FILENAME)  # Save metadata
         self.actuator.close()  # Close communication
         self.translator.close()  # Close communication
         self.function_generator.turn_off()

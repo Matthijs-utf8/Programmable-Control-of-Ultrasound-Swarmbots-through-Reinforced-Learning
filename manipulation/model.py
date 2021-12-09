@@ -18,12 +18,15 @@ def calc_action(pos0, offset, mode='naive'):
     :param mode:    Selection mode
     :return:        integer from 0 to NR_OF_PIEZOS
     """
+
+    max_velo = 20
+
     # Same as walk_to_pixel function
     if mode == 'naive':
         action = np.argmax(np.abs(offset))
         if not np.sign(offset[action]) == -1:
             action += 2
-        return action
+        return (action + 2) % 4
 
     # Choose action from single vector in pos0
     elif mode == 'single_choice':
