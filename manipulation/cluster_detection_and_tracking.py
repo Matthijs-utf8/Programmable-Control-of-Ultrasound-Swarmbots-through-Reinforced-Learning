@@ -15,15 +15,19 @@ def find_top_n_indices(data, top):
 
 # Find n largest clusters using thresholding, canny edge detection and contour finding from OpenCV
 def find_clusters(image, amount_of_clusters, verbose=False):
-
+    """
+    Detect clusters based on blur, thresholding and canny edge detection
+    :param image:               Working image
+    :param amount_of_clusters:  Number of clusters to detect (algorithm detects the #amount_of_clusters biggest ones)
+    :param verbose:             Plotting True or False
+    :return:                    Centroids, areas, bboxes of clusters
+    """
+    # Exception handling
     if not image.any():
-        return None
+        raise ValueError('Empty image received')
 
     # Check if image is grayscale
     assert len(image.shape) == 2, "Image must be grayscale"
-
-    # plt.hist(image)
-    # plt.show()
 
     # Using cv2.blur() method
     cleared_image = cv2.blur(cv2.threshold(image, 110, 255, cv2.THRESH_BINARY)[1], (2, 2))  # TODO --> Automatic threshold settings
@@ -34,8 +38,9 @@ def find_clusters(image, amount_of_clusters, verbose=False):
     # Find contours
     contours, _ = cv2.findContours(canny, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+    # Exception handling
     if not contours:
-        return [], [], []
+        raise ValueError('No contours detected')
 
     # Locate n biggest contours
     biggest_contours = find_top_n_indices([cv2.contourArea(con) for con in contours],
@@ -67,7 +72,7 @@ def find_clusters(image, amount_of_clusters, verbose=False):
                        int(2*squared_area),
                        int(2*squared_area)])
 
-
+    # Draw results
     if verbose:
 
         img = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
@@ -81,18 +86,12 @@ def find_clusters(image, amount_of_clusters, verbose=False):
                           color=(255, 255, 0))
 
         # Display result
+        cv2.imshow("Tracking", img)
 
-        # cv2.imshow("Tracking", img)
-        # cv2.circle(img, TARGET_COORD, 0, (255, 0, 0), 10)
         # Exit if ESC pressed
-        # k = cv2.waitKey(1) & 0xff
-        # if k == 27:
-        #     return
-
-    while len(areas) < 50:
-        centroids.append((None, None))
-        areas.append(None)
-        bboxes.append([None, None, None, None])
+        k = cv2.waitKey(1) & 0xff
+        if k == 27:
+            return
 
     return centroids, areas, bboxes
 
@@ -103,7 +102,11 @@ class TrackClusters:
         self.bbox = bbox
 
     def reset(self, img):
-
+        """
+        Initialize tracker based on first image and initial swarm coordinate
+        :param img: Working image
+        :return:    Center and size of cluster
+        """
         # Check if we specified a bounding box to start with, otherwise select largest cluster
         if not self.bbox:
             _, _, self.bbox = find_clusters(image=img, amount_of_clusters=1, verbose=False)
@@ -122,20 +125,23 @@ class TrackClusters:
         return self.center, np.mean((self.bbox[2], self.bbox[3]))
 
     def update(self, img, target: tuple, verbose: bool=False):
-
+        """
+        Track cluster based on previous and current position
+        :param img:     Working image
+        :param target:  Target point (for verbose purposes)
+        :param verbose: Plotting
+        :return:        Center and size of cluster
+        """
         # Perform tracker update and calculate new center
         try:
             self.ok, self.bbox = self.tracker.update(img)
         except:
-            # print("Problem with tracking")
-            return [None, None]
+            raise ValueError('Swarm could not be tracked')
         self.bbox = list(self.bbox)
         self.center = [int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3])]
 
+        # Draw results
         if verbose:
-
-            # Draw bounding box
-            # if self.ok:
 
             # Tracking success
             p1 = (int(self.bbox[0]), int(self.bbox[1]))
@@ -143,18 +149,12 @@ class TrackClusters:
             cv2.rectangle(img, p1, p2, (255, 0, 0))
             cv2.circle(img, target, 0, (255, 0, 0), 5)
 
+            # Display image
             cv2.imshow("Tracking", img)
 
             # Exit if ESC pressed
             k = cv2.waitKey(1) & 0xff
             if k == 27:
                 return
-            # else:
-            #
-            #     # Tracking failure, reset
-            #     cv2.putText(img, "Tracking failure detected", (100, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 0, 0), 2)
-            #     self.reset(img)
-
-
 
         return self.center, np.mean((self.bbox[2], self.bbox[3]))

@@ -1,13 +1,6 @@
 test*.py
 *.csv
-make_visuals.py
-neural_net_motion_predict.py
-test_piezos.py
-make_visuals.py
-make_visuals_2.py
-build_model.py
 __pycache__
-test2.py
-.pkl
-develop_model
-rx_reg2.pkl
+*.pkl
+models
+metadata

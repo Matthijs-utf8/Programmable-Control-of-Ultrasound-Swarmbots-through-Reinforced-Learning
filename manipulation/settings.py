@@ -28,18 +28,14 @@ UPDATE_ENV_EVERY = 1  # Update Vpp and frequency every UPDATE_ENV_EVERY steps
 # Model settings
 import pickle
 import numpy as np
-VECT_FIELDS = np.load(f"C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\venv\\Include\\AI_Actuated_Micrswarm_4\\models\\Vector_fields.npy")
+models_folder = 'C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\venv\\Include\\AI_Actuated_Micrswarm_4\\models'
+model_name = 'Vector_fields.npy'
+VECT_FIELDS = np.load(f"{models_folder}\\{model_name}")
 # MODEL_NAME = 'DecisionTreeRegressor.pkl'  # Name of model
 # MODEL = pickle.load(open(f"C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\venv\\Include\\AI_Actuated_Micrswarm_4\\" + MODEL_NAME, 'rb'))  # Load model
 
 # PID
 MEMORY_LENGTH = UPDATE_ENV_EVERY  # Length of the amount of steps used in the running average state of swarm
-THRESHOLD_SPEED = 0.5  # Minimum equilibrium speed
-THRESHOLD_DIRECTION = 0.75  # Minimum movement direction
-MIN_VPP = 10  # Minimum Vpp
-MAX_VPP = 20  # Maximum Vpp
-MIN_FREQUENCY = 1500  # Minimum frequency
-MAX_FREQUENCY = 2500  # Maximum frequency
 PIEZO_RESONANCES = {0: 2350, 1: 1500, 2: 2050, 3: 1900}
 
 # Data location settings
@@ -49,11 +45,11 @@ PROJECT_NAME = 'Project_Matt' # Project name (use only one project name per pers
 DATE = datetime.date.today() # Todays date, for keeping track of the experiments
 EXPERIMENT_RUN_NAME = 'TEST' # Use a descriptive name here so you know what you did during the experiment
 SAVE_DIR = f"C:\\Users\\ARSL\\PycharmProjects\\{PROJECT_NAME}\\{DATE}"  # Location for images all the images and metadata
-METADATA_SAVE_DIR = f'{SAVE_DIR}\\{EXPERIMENT_RUN_NAME}\\' # For saving metadata from experimental run
+SNAPSHOTS_SAVE_DIR = f'{SAVE_DIR}\\{EXPERIMENT_RUN_NAME}\\' # For saving metadata from experimental run
 if not os.path.isdir(SAVE_DIR):
     os.mkdir(SAVE_DIR)  # For saving all data from TODAY
-if not os.path.isdir(METADATA_SAVE_DIR):
-    os.mkdir(METADATA_SAVE_DIR)  # For saving snapshots from one experimental run
+if not os.path.isdir(SNAPSHOTS_SAVE_DIR):
+    os.mkdir(SNAPSHOTS_SAVE_DIR)  # For saving snapshots from one experimental run
 
 # Data settings
 import pandas

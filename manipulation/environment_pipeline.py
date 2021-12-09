@@ -1,5 +1,5 @@
 import numpy as np
-from preprocessing import TrackClusters
+from cluster_detection_and_tracking import TrackClusters
 import cv2
 import datetime
 import time
@@ -268,10 +268,10 @@ class FunctionGenerator:
     def __init__(self, instrument_descriptor=INSTR_DESCRIPTOR):
         self.AFG3000 = tfg.FuncGen(instrument_descriptor).ch1
 
-    def reset(self):
+    def reset(self, vpp=0, frequency=1):
 
-        self.set_vpp(vpp=MIN_VPP)
-        self.set_frequency(frequency=MIN_FREQUENCY)
+        self.set_vpp(vpp=vpp)
+        self.set_frequency(frequency=frequency)
         self.set_waveform('SQUARE')
         self.turn_on()
 
@@ -320,24 +320,30 @@ class SwarmEnv:
         self.metadata = metadata
         self.model = calc_action
 
-        # Initialize Vpp and frequency to their minima
-        self.function_generator.reset()
+        # Initialize Vpp and frequency
         self.vpp = 20
         self.frequency = 2000  # kHz
+        self.function_generator.reset(vpp=self.vpp,
+                                      frequency=self.frequency)
 
         # Keep track of target point (idx in target_points)
         self.target_points = target_points
         self.target_idx = 0
 
         # Initialize memory
-        self.memory = deque(maxlen=MEMORY_LENGTH)
-        self.magic_vpp = 0
+        # self.memory = deque(maxlen=MEMORY_LENGTH)
 
         # Set exit condition
         atexit.register(self.close)
 
     def draw_bbox(self, img):
-
+        """
+        Draw a bounding box around swarm that you would like to track
+        Controls:   drag & drop with mouse
+                    Enter to continue, backspace to reset
+        :param img: Image to draw in bounding box
+        :return:    bounding box
+        """
         refPt = []
 
         def click_and_crop(event, x, y, flags, param):
@@ -368,7 +374,13 @@ class SwarmEnv:
         return [refPt[0][0], refPt[0][1], refPt[1][0] - refPt[0][0], refPt[1][1] - refPt[0][1]]
 
     def draw_targets(self, img):
-
+        """
+        Click target point on the image that the algorithm follows consequetively
+        Controls:   Click points with mouse
+                    Enter to continue, backspace to reset
+        :param img: Image to click target point on
+        :return:    List of target points
+        """
         refPt = []
 
         def click_and_crop(event, x, y, flags, param):
@@ -410,11 +422,11 @@ class SwarmEnv:
         self.now = round(time.time(), 3)
 
         # Define file name
-        filename = SAVE_DIR + f"{self.now}-reset.png"
+        filename = SNAPSHOTS_SAVE_DIR + f"{self.now}-reset.png"
 
         # Snap a frame from the video stream and save
-        img = self.source.snap(f_name=filename)
-        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # TODO --> check if this works
+        self.source.snap(f_name=filename)
+        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
 
         # Draw bbox around swarm to track
         bbox = np.array(np.array(self.draw_bbox(img=img)), dtype=int).tolist()
@@ -432,7 +444,7 @@ class SwarmEnv:
         self.state, self.size = self.tracker.reset(img=img)
 
         # Add state to memory
-        self.memory.append(np.array(self.state))
+        # self.memory.append(np.array(self.state))
 
         # Add metadata to dataframe
         self.metadata = self.metadata.append(
@@ -445,12 +457,7 @@ class SwarmEnv:
              "State": self.state,
              "Target": self.target_points[self.target_idx],
              "Step": self.step,
-             "OFFSET_BOUNDS": OFFSET_BOUNDS,
-             "MEMORY_LENGTH": MEMORY_LENGTH,
-             "THRESHOLD_SPEED": THRESHOLD_SPEED,
-             "MIN_VPP": MIN_VPP,
-             "MAX_VPP": MAX_VPP,
-             "MIN_FREQUENCY": MIN_FREQUENCY},
+             "OFFSET_BOUNDS": OFFSET_BOUNDS},
              ignore_index=True
         )
 
@@ -470,7 +477,7 @@ class SwarmEnv:
         filename = SAVE_DIR + f"{self.now}.png"
 
         # Snap a frame from the video stream
-        img = self.source.snap(f_name=filename)
+        self.source.snap(f_name=filename)
         img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # TODO --> check if this works
 
         # Get the new state
@@ -478,19 +485,15 @@ class SwarmEnv:
                                                     target=self.target_points[self.target_idx],  # For verbose purposes
                                                     verbose=True)  # Show live tracking
 
-        # Exception handling
-        if not self.state:
-            self.state = (0, 0)
-
         # Only update function generator and arduino every UPDATE_ENV_EVERY steps
         if not self.step % UPDATE_ENV_EVERY:
 
             if self.step != 0:
                 print(f'FPS: {1 / ((time.time() - self.t0) / UPDATE_ENV_EVERY)}')
 
-            # self.actuator.arduino.write(b"9")
+            offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
             self.action = self.model(pos0=self.state,
-                                     offset=np.array(self.state) - np.array(self.target_points[self.target_idx]),
+                                     offset=offset,
                                      mode='avg')
 
             self.function_generator.set_frequency(frequency=PIEZO_RESONANCES[self.action])
@@ -501,7 +504,7 @@ class SwarmEnv:
             self.t0 = time.time()
 
         # Add state to memory
-        self.memory.append(np.array(self.state))
+        # self.memory.append(np.array(self.state))
 
         # Add metadata to dataframe
         self.metadata = self.metadata.append(
@@ -514,19 +517,12 @@ class SwarmEnv:
              "State": self.state,
              "Target": self.target_points[self.target_idx],
              "Step": self.step,
-             "OFFSET_BOUNDS": OFFSET_BOUNDS,
-             "MEMORY_LENGTH": MEMORY_LENGTH,
-             "THRESHOLD_SPEED": THRESHOLD_SPEED,
-             "THRESHOLD_DIRECTION": THRESHOLD_DIRECTION,
-             "MIN_VPP": MIN_VPP,
-             "MAX_VPP": MAX_VPP,
-             "MIN_FREQUENCY": MIN_FREQUENCY,
-             "MAX_FREQUENCY": MAX_FREQUENCY},
+             "OFFSET_BOUNDS": OFFSET_BOUNDS},
              ignore_index=True
         )
 
         # # Move microscope to next point if offset goes into bounds
-        if np.linalg.norm(np.array(self.state) - np.array(self.target_points[self.target_idx])) < OFFSET_BOUNDS:
+        if np.linalg.norm(offset) < OFFSET_BOUNDS:
             self.target_idx = (self.target_idx + 1) % (len(self.target_points))
 
         # Add step
@@ -534,57 +530,6 @@ class SwarmEnv:
 
         # Return centroids of n amount of swarms
         return self.state
-
-    # TODO --> There is a lot of double euclidean distance calculation in this function now. Maybe make this smarter???
-    def set_vpp_and_frequency(self):
-
-        # Set Vpp based on distance from target
-        self.vpp = np.sqrt(np.linalg.norm(self.memory[-1] -
-                           np.array(self.target_points[self.target_idx])) /
-                           (np.sqrt(2)*0.5*IMG_SIZE)) * \
-                           (MAX_VPP - MIN_VPP) + \
-                           MIN_VPP
-        self.vpp += self.magic_vpp
-        self.vpp = min(self.vpp, MAX_VPP)
-
-        self.function_generator.set_vpp(vpp=self.vpp)
-
-        # Calculate average direction of target position
-        # target_offsets = np.array(self.target_points[self.target_idx]) - np.array(self.memory)
-        # avg_direction_target = np.average(a=target_offsets / np.linalg.norm(target_offsets,
-        #                                   axis=1).reshape((len(self.memory), 1)), axis=0)
-        #
-        # Calculate average direction of swarm movement
-        # movement_offsets = np.array(self.memory)[1:] - np.array(self.memory)[:-1]
-        # movement_speeds = np.linalg.norm(x=movement_offsets,
-        #                                  axis=1)
-        # avg_direction_movement = np.mean(a=np.nan_to_num(x=movement_offsets / movement_speeds.reshape((len(self.memory) - 1, 1))),
-        #                                  axis=0)
-        # avg_direction_movement = np.nan_to_num(x=avg_direction_movement / np.linalg.norm(avg_direction_movement))
-        #
-        # # Set frequency if we don't move at a certain speed
-        # if len(self.memory) > 1:
-        #
-        #     # If movement is slow
-        #     if np.average(movement_speeds) < THRESHOLD_SPEED:
-        #         print('We are stationary')
-        #         self.frequency += 4
-        #         print('Magic is happening')
-        #         self.magic_vpp += 1
-        #
-        #     # If movement is not in direction of target
-        #     elif np.any(np.abs(avg_direction_target - avg_direction_movement) > THRESHOLD_DIRECTION):
-        #         print('We are crooked')
-        #         self.frequency += 2
-        #     else:
-        #         self.magic_vpp = 0
-        #
-        #     # Make sure the frequency does not go out of bounds
-        #     if self.frequency > MAX_FREQUENCY:
-        #         self.frequency = MIN_FREQUENCY
-        #
-        #     # Set frequency to function generator
-        #     self.function_generator.set_frequency(frequency=self.frequency)
 
     def close(self):
         print(f'Final bbox: {self.tracker.bbox}')  # Print final bounding box, for if we want to continue tracking the same swarm
@@ -598,39 +543,30 @@ class SwarmEnv:
 class DataGatherEnv:
 
     def __init__(self,
-                 source=VideoStreamHammamatsu(),
-                 actuator=ActuatorPiezos(),
-                 translator=TranslatorLeica(),
-                 function_generator=FunctionGenerator(),
                  metadata=METADATA):
 
         # Initialize devices
-        self.source = source  # Camera
-        self.actuator = actuator  # Piezo's
-        self.translator = translator  # Leica xy-platform
-        self.function_generator = function_generator  # Function generator
+        self.source = VideoStreamHammamatsu()  # Camera
+        self.actuator = ActuatorPiezos()  # Piezo's
+        self.translator = TranslatorLeica()  # Leica xy-platform
+        self.function_generator = FunctionGenerator()  # Function generator
 
         self.function_generator.set_waveform('SQUARE')
         self.function_generator.turn_on()
 
         # Metadata structure
-        # self.metadata = metadata
         self.metadata = pd.DataFrame(
             {"Filename": "Initial",
              "Time": (None, None),
              "Vpp": None,
              "Frequency": None,
              "Action": None}
-
         )
-        # self.metadata = self.metadata.dropna(axis=1, how='all')
 
         # Set exit condition
         atexit.register(self.close)
 
     def env_step(self, action, vpp, frequency):
-
-        ### Alter freq, vpp, action ###
 
         # Get time
         self.now = round(time.time(), 3)

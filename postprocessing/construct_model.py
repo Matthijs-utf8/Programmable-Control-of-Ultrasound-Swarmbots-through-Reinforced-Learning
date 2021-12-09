@@ -46,12 +46,10 @@ if __name__ == "__main__":
     def normalized_sample(csv, feature, sampling=10, repeats=10):
         cols = csv.columns
         bins = csv[feature].value_counts().keys()
-        # new_csv = np.empty((0, len(cols)))
         new_csv = []
         for i in range(repeats):
             print(i)
             for n in bins:
-                # new_csv = np.vstack((new_csv, csv[csv[feature] == n].sample(n=sampling, replace=True).values.tolist()))
                 new_csv.append(csv[csv[feature] == n].sample(n=sampling, replace=True).values.tolist())
         new_shape = np.array(new_csv).shape
         return pd.DataFrame(np.array(new_csv).reshape((new_shape[0]*new_shape[1], new_shape[2])), columns=cols)
@@ -74,8 +72,8 @@ if __name__ == "__main__":
 
     angles_train = y_train[:, 0]
     angles_test = y_test[:, 0]
-    magns_train = y_train[:, -1]#[:, np.newaxis]
-    magns_test = y_test[:, -1]#[:, np.newaxis]
+    magns_train = y_train[:, -1]
+    magns_test = y_test[:, -1]
     data_train = X_train[:, :3]
     data_test = X_test[:, :3]
 
