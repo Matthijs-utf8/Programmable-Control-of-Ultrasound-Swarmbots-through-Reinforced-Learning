@@ -33,10 +33,10 @@ model_name = 'Vector_fields.npy'
 VECT_FIELDS = np.load(f"{models_folder}\\{model_name}")
 # MODEL_NAME = 'DecisionTreeRegressor.pkl'  # Name of model
 # MODEL = pickle.load(open(f"C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\venv\\Include\\AI_Actuated_Micrswarm_4\\" + MODEL_NAME, 'rb'))  # Load model
+PIEZO_RESONANCES = {0: 2350, 1: 1500, 2: 2050, 3: 1900}
 
 # PID
-MEMORY_LENGTH = UPDATE_ENV_EVERY  # Length of the amount of steps used in the running average state of swarm
-PIEZO_RESONANCES = {0: 2350, 1: 1500, 2: 2050, 3: 1900}
+# MEMORY_LENGTH = UPDATE_ENV_EVERY  # Length of the amount of steps used in the running average state of swarm
 
 # Data location settings
 import datetime

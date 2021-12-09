@@ -203,4 +203,5 @@ if __name__ == '__main__':
     #              sampling=1000,
     #              repeats=10,
     #              piezo=None)
+    # np.save('C:\\Users\\ARSL\\PycharmProjects\\Project_Matt\\venv\\Include\\AI_Actuated_Micrswarm_4\\models\\Vector_fields.npy', create_vector_fields(csv0=DYNAMICS_CSV))
     pass
