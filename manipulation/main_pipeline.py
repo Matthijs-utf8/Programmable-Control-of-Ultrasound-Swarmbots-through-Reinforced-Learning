@@ -14,7 +14,6 @@ def main():
 
     # Initiate environment and action model
     env = SwarmEnv()
-    model = calc_action
 
     state = env.reset()  # Fill in bbox from last step to continue tracking same swarm
     print(f"Initial state: {state}")
@@ -22,8 +21,7 @@ def main():
     # Loop through steps
     for _ in tqdm(range(MAX_STEPS)):
 
-        state, offset = env.env_step()
-        # action = model(state, offset)
+        state = env.env_step()
 
     env.close()
 

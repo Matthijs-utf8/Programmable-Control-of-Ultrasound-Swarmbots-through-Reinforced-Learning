@@ -17,47 +17,47 @@ def main():
     env = DataGatherEnv()
 
     vpp_steps = 6
-    freq_steps = 19
+    freq_steps = 201
     action_steps = 4
-    env_steps = 100
+    env_steps = 20
     total_steps = vpp_steps * freq_steps * action_steps * env_steps
-    folder = "square_env_recordings"
+    # folder = "square_env_recordings"
     print(f"Total steps: {total_steps}")
 
-    for frequency in tqdm(np.linspace(1500, 2500, num=freq_steps)):
+    for frequency in tqdm(np.linspace(50, 150, num=freq_steps)):
 
         env.function_generator.set_frequency(frequency=frequency)
 
         # TODO: --> debug code and make sure all hyperparams are in setting.py
-        metadata_filename = f"{folder}\\{frequency}.csv"
-        env.metadata = pandas.DataFrame(
-            {"Filename": "Initial",
-             "Time": (None, None),
-             "Vpp": None,
-             "Frequency": None,
-             "Action": None
-             }
-        )
+        # metadata_filename = f"{folder}\\{frequency}.csv"
+        # env.metadata = pandas.DataFrame(
+        #     {"Filename": "Initial",
+        #      "Time": (None, None),
+        #      "Vpp": None,
+        #      "Frequency": None,
+        #      "Action": None
+        #      }
+        # )
 
-        for vpp in np.linspace(10, 20, num=vpp_steps):
+        # for vpp in np.linspace(10, 20, num=vpp_steps):
 
-            t0 = time.time()
+        t0 = time.time()
 
-            env.function_generator.set_vpp(vpp=vpp)
+        # env.function_generator.set_vpp(vpp=vpp)
 
-            for action in range(action_steps):
+        for action in range(action_steps):
 
-                env.actuator.move(action=action)
+            env.actuator.move(action=action)
 
-                for step in range(env_steps):
+            for step in range(env_steps):
 
-                    env.env_step(action=action,
-                                 vpp=vpp,
-                                 frequency=frequency)
+                env.env_step(action=action,
+                             vpp=1,
+                             frequency=frequency)
 
             print(f'FPS: {1 / ((time.time() - t0) / (action_steps * env_steps))}')
 
-            env.metadata.to_csv(metadata_filename)
+            env.metadata.to_csv(METADATA_FILENAME)
 
     env.close()
 

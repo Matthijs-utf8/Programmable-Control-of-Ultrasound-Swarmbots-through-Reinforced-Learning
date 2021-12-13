@@ -15,7 +15,7 @@ import tqdm
 import pandas as pd
 import tektronix_func_gen as tfg
 import atexit
-from model import calc_action
+from model import calc_action, update_q_values
 
 
 class VideoStreamHammamatsu:
@@ -307,6 +307,7 @@ class SwarmEnv:
 
     def __init__(self,
                  target_points=TARGET_POINTS,
+                 q_values=Q_VALUES_INITIAL,
                  metadata=METADATA):
 
         # Initialize devices
@@ -320,14 +321,21 @@ class SwarmEnv:
         self.model = calc_action
 
         # Initialize Vpp and frequency
-        self.vpp = 6
+        self.vpp = 2
         self.frequency = 2000  # kHz
+        self.action = -1
         self.function_generator.reset(vpp=self.vpp,
                                       frequency=self.frequency)
 
         # Keep track of target point (idx in target_points)
         self.target_points = target_points
         self.target_idx = 0
+
+        # Keep track of dynamics from the near past
+        self.memory = deque(maxlen=MAX_MEM_LEN)
+
+        # Initialize Q values
+        self.q_values = q_values
 
         # Set exit condition
         atexit.register(self.close)
@@ -436,6 +444,9 @@ class SwarmEnv:
         # Get the centroid of (biggest) swarm
         self.state, self.size = self.tracker.reset(img=img)
 
+        # Add position to memory
+        self.memory.append(self.state)
+
         # Add metadata to dataframe
         self.metadata = self.metadata.append(
             {"Filename": filename,
@@ -451,13 +462,15 @@ class SwarmEnv:
              ignore_index=True
         )
 
+        self.t0 = time.time()
+
         # Return centroids of n amount of swarms
         return self.state
 
     def env_step(self):
 
         # Save metadata every X amount of steps
-        if not self.step % 50:
+        if not self.step % SAVE_RATE_METADATA:
             self.metadata.to_csv(METADATA_FILENAME)
 
         # Get time
@@ -470,26 +483,35 @@ class SwarmEnv:
         self.source.snap(f_name=filename)
         img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # TODO --> check if this works
 
-        # Get the new state
+        # Get the new state and add to memory
         self.state, self.size = self.tracker.update(img=img,  # Read image
                                                     target=self.target_points[self.target_idx],  # For verbose purposes
+                                                    action=self.action,
                                                     verbose=True)  # Show live tracking
+        offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
+        self.memory.append(self.state)
 
-        # Only update function generator and arduino every UPDATE_ENV_EVERY steps
-        if not self.step % UPDATE_ENV_EVERY:
+        if not self.step % UPDATE_RATE_Q_VALUES and self.step != 0:
 
-            if self.step != 0:
-                print(f'FPS: {1 / ((time.time() - self.t0) / UPDATE_ENV_EVERY)}')
+            self.q_values = update_q_values(action=self.action,
+                                            memory=self.memory,
+                                            q_values=self.q_values)
 
-            offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
-            self.action = self.model(pos0=self.state,
-                                     offset=offset,
-                                     mode='naive')
+        # Only update function generator and arduino every UPDATE_RATE_ENV steps
+        if not self.step % UPDATE_RATE_ENV:
 
-            self.function_generator.set_frequency(frequency=PIEZO_RESONANCES[self.action])
+            print(f'FPS: {1 / ((time.time() - self.t0) / UPDATE_RATE_ENV)}')
 
-            # Actuate piezos
-            self.actuator.move(self.action)
+            new_action = self.model(pos0=self.state,
+                                    offset=offset,
+                                    q_values=self.q_values,
+                                    mode='max')
+
+            # Perform action
+            if new_action != self.action:
+                self.action = new_action
+                self.function_generator.set_frequency(frequency=PIEZO_RESONANCES[self.action])
+                self.actuator.move(self.action)
 
             self.t0 = time.time()
 
@@ -519,11 +541,13 @@ class SwarmEnv:
         return self.state
 
     def close(self):
+        np.save(f'{MODELS_FOLDER}\\{EXPERIMENT_RUN_NAME}_{self.now}_{MODEL_NAME}', self.q_values)
         self.metadata.to_csv(METADATA_FILENAME)  # Save metadata
         self.actuator.close()  # Close communication
         self.translator.close()  # Close communication
         self.function_generator.turn_off()
         cv2.destroyAllWindows()
+        print('Safely closed environment...')
 
 
 class DataGatherEnv:
@@ -558,7 +582,7 @@ class DataGatherEnv:
         self.now = round(time.time(), 3)
 
         # Define file name
-        filename = SAVE_DIR + f"{self.now}.png"
+        filename = SNAPSHOTS_SAVE_DIR + f"{self.now}.png"
 
         # Snap a frame from the video stream
         self.source.snap(f_name=filename)
@@ -577,7 +601,7 @@ class DataGatherEnv:
         )
 
     def close(self):
-        self.metadata.to_csv(metadata_filename)  # Save metadata
+        self.metadata.to_csv(METADATA_FILENAME)  # Save metadata
         self.actuator.close()  # Close communication
         self.translator.close()  # Close communication
         self.function_generator.turn_off()

@@ -124,11 +124,12 @@ class TrackClusters:
 
         return self.center, np.mean((self.bbox[2], self.bbox[3]))
 
-    def update(self, img, target: tuple, verbose: bool=False):
+    def update(self, img, target: tuple, action: int, verbose: bool=False):
         """
         Track cluster based on previous and current position
         :param img:     Working image
         :param target:  Target point (for verbose purposes)
+        :param action:  Piezo actuation (for verbose purposes)
         :param verbose: Plotting
         :return:        Center and size of cluster
         """
@@ -143,11 +144,23 @@ class TrackClusters:
         # Draw results
         if verbose:
 
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+
             # Tracking success
             p1 = (int(self.bbox[0]), int(self.bbox[1]))
             p2 = (int(self.bbox[0] + self.bbox[2]), int(self.bbox[1] + self.bbox[3]))
-            cv2.rectangle(img, p1, p2, (255, 0, 0))
-            cv2.circle(img, target, 0, (255, 0, 0), 5)
+            cv2.rectangle(img, p1, p2, (255, 102, 102))
+            cv2.circle(img, target, 0, (178, 255, 102), 5)
+
+            # Draw green line on the side which the piezo was actuated
+            if action == 0:
+                cv2.line(img, (IMG_SIZE - 2, IMG_SIZE), (298, 0), (153, 153, 255), 4)
+            elif action == 2:
+                cv2.line(img, (2, IMG_SIZE), (2, 0), (153, 153, 255), 4)
+            elif action == 1:
+                cv2.line(img, (0, IMG_SIZE - 2), (IMG_SIZE, 298), (153, 153, 255), 4)
+            elif action == 3:
+                cv2.line(img, (0, 2), (IMG_SIZE, 2), (153, 153, 255), 4)
 
             # Display image
             cv2.imshow("Tracking", img)
