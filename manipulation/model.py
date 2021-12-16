@@ -21,8 +21,6 @@ def update_q_values(action, memory, q_values):
         # Calculate average direction of swarm movement
         avg_speed = np.mean(np.array(memory)[1:] - np.array(memory)[:-1], axis=0)
 
-        print(mean_pos)
-
         if mean_pos[0] < MAX_VELO:
             x_slice = slice(0, mean_pos[0] + MAX_VELO)
             x_slice_kernel = slice(MAX_VELO - (mean_pos[0] % MAX_VELO), -1)
@@ -53,15 +51,13 @@ def update_q_values(action, memory, q_values):
         kernel = Q_VALUES_UPDATE_KERNEL.copy()[x_slice_kernel, y_slice_kernel, slice(0, 2)] * avg_speed
 
         # Update q values
-        q_values[ROI] += 0.1 * kernel * avg_speed
+        q_values[ROI] = GAMMA * q_values[ROI] + (1-GAMMA) * kernel * avg_speed
 
         return q_values
 
     else:
         return q_values
 
-# if __name__ == '__main__':
-#     update_q_values(0, [(26, 27), (28, 29)], q_values=Q_VALUES_INITIAL)
 
 def calc_action(pos0, offset, q_values=None, mode='naive'):
     """
@@ -72,6 +68,9 @@ def calc_action(pos0, offset, q_values=None, mode='naive'):
     :return:        integer from 0 to NR_OF_PIEZOS
     """
 
+    if np.random.rand() < EPSILON:
+        return random_action()
+
     # Same as walk_to_pixel function
     if mode == 'naive':
         action = np.argmax(np.abs(offset))
@@ -79,7 +78,7 @@ def calc_action(pos0, offset, q_values=None, mode='naive'):
             action += 2
         return (action + 2) % 4
 
-    if mode == 'straight_line':
+    elif mode == 'straight_line':
         action = np.random.choice((0, 1), p=(np.abs(offset)/np.sum(np.abs(offset))))
         if not np.sign(offset[action]) == -1:
             action += 2

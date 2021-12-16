@@ -505,7 +505,7 @@ class SwarmEnv:
             new_action = self.model(pos0=self.state,
                                     offset=offset,
                                     q_values=self.q_values,
-                                    mode='max')
+                                    mode='avg')
 
             # Perform action
             if new_action != self.action:

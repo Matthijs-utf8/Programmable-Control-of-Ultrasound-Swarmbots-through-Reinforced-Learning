@@ -1,6 +1,6 @@
-test*.py
 *.csv
 __pycache__
 *.pkl
 models
 metadata
+test.py
