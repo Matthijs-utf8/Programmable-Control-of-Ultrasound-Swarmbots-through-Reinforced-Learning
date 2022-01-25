@@ -21,37 +21,12 @@ def update_q_values(action, memory, q_values):
         # Calculate average direction of swarm movement
         avg_speed = np.mean(np.array(memory)[1:] - np.array(memory)[:-1], axis=0)
 
-        if mean_pos[0] < MAX_VELO:
-            x_slice = slice(0, mean_pos[0] + MAX_VELO)
-            x_slice_kernel = slice(MAX_VELO - (mean_pos[0] % MAX_VELO), -1)
-        elif mean_pos[0] > IMG_SIZE - MAX_VELO:
-            x_slice = slice(mean_pos[0]-MAX_VELO, IMG_SIZE)
-            x_slice_kernel = slice(0, 2*MAX_VELO - (mean_pos[0] % MAX_VELO))
-        else:
-            x_slice = slice(mean_pos[0]-MAX_VELO, mean_pos[0]+MAX_VELO)
-            x_slice_kernel = slice(0, 100)
-
-        if mean_pos[1] < MAX_VELO:
-            y_slice = slice(0, mean_pos[1] + MAX_VELO)
-            y_slice_kernel = slice(MAX_VELO - (mean_pos[1] % MAX_VELO), -1)
-        elif mean_pos[1] > IMG_SIZE - MAX_VELO:
-            y_slice = slice(mean_pos[1]-MAX_VELO, IMG_SIZE)
-            y_slice_kernel = slice(0, 2*MAX_VELO - (mean_pos[1] % MAX_VELO))
-        else:
-            y_slice = slice(mean_pos[1]-MAX_VELO, mean_pos[1]+MAX_VELO)
-            y_slice_kernel = slice(0, 100)
-
-        # Define Region of Interest
-        ROI = [action,
-               slice(max(mean_pos[0] - MAX_VELO, 0), min(mean_pos[0] + MAX_VELO, q_values.shape[1])),
-               slice(max(mean_pos[1] - MAX_VELO, 0), min(mean_pos[1] + MAX_VELO, q_values.shape[2])),
-               slice(0, 2)]
-
-        # Define kernel for updating function of the q values
-        kernel = Q_VALUES_UPDATE_KERNEL.copy()[x_slice_kernel, y_slice_kernel, slice(0, 2)] * avg_speed
+        kernel_slice_x = slice(300 - mean_pos[1], 600 - mean_pos[1])
+        kernel_slice_y = slice(300 - mean_pos[0], 600 - mean_pos[0])
 
         # Update q values
-        q_values[ROI] = GAMMA * q_values[ROI] + (1-GAMMA) * kernel * avg_speed
+        q_values[action] = GAMMA * q_values[action] + (1-GAMMA) * Q_VALUES_UPDATE_KERNEL[kernel_slice_x, kernel_slice_y] * avg_speed
+
 
         return q_values
 

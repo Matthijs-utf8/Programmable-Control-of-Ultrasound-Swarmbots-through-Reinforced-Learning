@@ -35,7 +35,7 @@ class VideoStreamHammamatsu:
 
         # Prepare acquisition
         self.core.prepareSequenceAcquisition(self.label)
-        self.core.startContinuousSequenceAcquisition(0.1)
+        self.core.startContinuousSequenceAcquisition(0.025)
         self.core.initializeCircularBuffer()
         time.sleep(1)
 
@@ -51,8 +51,7 @@ class VideoStreamHammamatsu:
                 pass
 
         # Resize image
-        img = cv2.resize(img, size)
-        # img = np.array(img / np.max(img))
+        img = (cv2.resize(img, size) / 256).astype("uint8")
 
         # Save image
         cv2.imwrite(f_name, img)
@@ -93,7 +92,7 @@ class ActuatorPiezos:
         # Initiate contact with arduino
         self.arduino = serial.Serial(port=SERIAL_PORT_ARDUINO, baudrate=BAUDRATE_ARDUINO)
         print(f"Arduino: {self.arduino.readline().decode()}")
-        time.sleep(1)  # give serial communication time to establish
+        time.sleep(1)  # Give serial communication time to establish
 
         # Initiate status of 4 piëzo transducers
         self.arduino.write(b"9")  # Turn all outputs to LOW
@@ -279,7 +278,6 @@ class FunctionGenerator:
     def set_vpp(self, vpp: float):
         self.AFG3000.set_amplitude(vpp)
 
-
     def get_vpp(self):
         return self.AFG3000.get_amplitude()
 
@@ -313,7 +311,6 @@ class SwarmEnv:
         # Initialize devices
         self.source = VideoStreamHammamatsu()  # Camera
         self.actuator = ActuatorPiezos()  # Piezo's
-        self.translator = TranslatorLeica()  # Leica xy-platform
         self.function_generator = FunctionGenerator()  # Function generator
 
         # Metadatastructure
@@ -336,6 +333,7 @@ class SwarmEnv:
 
         # Initialize Q values
         self.q_values = q_values
+        self.mode = "single_choice"
 
         # Set exit condition
         atexit.register(self.close)
@@ -426,8 +424,8 @@ class SwarmEnv:
         filename = SNAPSHOTS_SAVE_DIR + f"{self.now}-reset.png"
 
         # Snap a frame from the video stream and save
-        self.source.snap(f_name=filename)
-        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
+        img = self.source.snap(f_name=filename)
+        # img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
 
         # Draw bbox around swarm to track
         bbox = np.array(np.array(self.draw_bbox(img=img)), dtype=int).tolist()
@@ -469,10 +467,6 @@ class SwarmEnv:
 
     def env_step(self):
 
-        # Save metadata every X amount of steps
-        if not self.step % SAVE_RATE_METADATA:
-            self.metadata.to_csv(METADATA_FILENAME)
-
         # Get time
         self.now = round(time.time(), 3)
 
@@ -480,8 +474,8 @@ class SwarmEnv:
         filename = SNAPSHOTS_SAVE_DIR + f"{self.now}.png"
 
         # Snap a frame from the video stream
-        self.source.snap(f_name=filename)
-        img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)  # TODO --> check if this works
+        img = self.source.snap(f_name=filename)
+        # img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
 
         # Get the new state and add to memory
         self.state, self.size = self.tracker.update(img=img,  # Read image
@@ -491,8 +485,8 @@ class SwarmEnv:
         offset = np.array(self.state) - np.array(self.target_points[self.target_idx])
         self.memory.append(self.state)
 
+        # Update Q values
         if not self.step % UPDATE_RATE_Q_VALUES and self.step != 0:
-
             self.q_values = update_q_values(action=self.action,
                                             memory=self.memory,
                                             q_values=self.q_values)
@@ -505,7 +499,7 @@ class SwarmEnv:
             new_action = self.model(pos0=self.state,
                                     offset=offset,
                                     q_values=self.q_values,
-                                    mode='avg')
+                                    mode=self.mode)
 
             # Perform action
             if new_action != self.action:
@@ -541,11 +535,11 @@ class SwarmEnv:
         return self.state
 
     def close(self):
-        np.save(f'{MODELS_FOLDER}\\{EXPERIMENT_RUN_NAME}_{self.now}_{MODEL_NAME}', self.q_values)
         self.metadata.to_csv(METADATA_FILENAME)  # Save metadata
         self.actuator.close()  # Close communication
         self.translator.close()  # Close communication
         self.function_generator.turn_off()
+        np.save(f'{MODELS_FOLDER}\\{EXPERIMENT_RUN_NAME}_{self.now}_{MODEL_NAME}', self.q_values)
         cv2.destroyAllWindows()
         print('Safely closed environment...')
 

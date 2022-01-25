@@ -1,7 +1,7 @@
 import cv2
 from operator import itemgetter
 import numpy as np
-from settings import *
+from manipulation.settings import *
 import matplotlib.pyplot as plt
 
 # Find the indices of the top n values from a list or array quickly
@@ -14,7 +14,7 @@ def find_top_n_indices(data, top):
 
 
 # Find n largest clusters using thresholding, canny edge detection and contour finding from OpenCV
-def find_clusters(image, amount_of_clusters, verbose=False):
+def find_clusters(image, amount_of_clusters, verbose=False, cutoff=None):
     """
     Detect clusters based on blur, thresholding and canny edge detection
     :param image:               Working image
@@ -31,10 +31,19 @@ def find_clusters(image, amount_of_clusters, verbose=False):
     assert len(image.shape) == 2, "Image must be grayscale"
 
     # Using cv2.blur() method
-    cleared_image = cv2.blur(cv2.threshold(image, 110, 255, cv2.THRESH_BINARY)[1], (2, 2))  # TODO --> Automatic threshold settings
+    if not cutoff:
+        cleared_image = cv2.blur(cv2.threshold(image, 110, 255, cv2.THRESH_BINARY)[1], (2, 2))  # TODO --> Automatic threshold settings
+    else:
+        cleared_image = cv2.blur(cv2.threshold(image, cutoff, 255, cv2.THRESH_BINARY)[1], (2, 2))  # TODO --> Automatic threshold settings
+
+    # plt.imshow(cleared_image)
+    # plt.show()
 
     # Separate clusters from background and convert background to black
     canny = cv2.Canny(cleared_image, threshold1=0, threshold2=0)
+
+    # plt.imshow(canny)
+    # plt.show()
 
     # Find contours
     contours, _ = cv2.findContours(canny, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -106,6 +115,7 @@ class TrackClusters:
 
         # Define tracker and initialise
         self.tracker = cv2.TrackerCSRT_create()  # Very accurate, dynamic sizing, not the fastest, still okay
+        # self.tracker = cv2.TrackerKCF_create()
         # self.tracker = cv2.legacy_TrackerMedianFlow.create()  # Very fast, dynamic sizing, medium accuracy
 
         self.ok = self.tracker.init(img, self.bbox)
@@ -128,8 +138,9 @@ class TrackClusters:
         try:
             self.ok, self.bbox = self.tracker.update(img)
         except:
-            # print("Problem with tracking")
-            return [None, None]
+            print("Problem with tracking")
+            return self.center, self.bbox
+
         self.bbox = list(self.bbox)
         self.center = [int(self.bbox[0] + 0.5 * self.bbox[2]), int(self.bbox[1] + 0.5 * self.bbox[3])]
 

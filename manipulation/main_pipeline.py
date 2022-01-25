@@ -21,7 +21,7 @@ def main():
     # Loop through steps
     for _ in tqdm(range(MAX_STEPS)):
 
-        state = env.env_step()
+        env.env_step()
 
     env.close()
 

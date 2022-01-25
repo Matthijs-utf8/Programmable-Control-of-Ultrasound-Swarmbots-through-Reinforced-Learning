@@ -1,10 +1,11 @@
-from preprocessing2 import TrackClusters, find_clusters
+from postprocessing.cluster_detection_and_tracking import find_clusters, TrackClusters
 import numpy as np
 import pandas as pd
 import os
 import cv2
 import tqdm
 import os
+from manipulation.settings import *
 
 
 class TrackNClusters:
@@ -59,14 +60,10 @@ if __name__ == "__main__":
 
     # Initialize metadata
     print('Loading data...')
-    PROJECT_NAME = 'Project_Matt'  # Project name
-    DATE = ''  # Date of the experiment
-    EXPERIMENT_RUN_NAME = 'TEST'  # Name of the experiment run
-    SAVE_DIR = f"C:\\Users\\ARSL\\PycharmProjects\\{PROJECT_NAME}\\{DATE}"  # Location for images all the images and metadata
-    METADATA = pd.read_csv(f"{SAVE_DIR}{EXPERIMENT_RUN_NAME}.csv")
-    del csv['Unnamed: 0'] # Delete unwanted column to save memory
-    csv = csv.dropna() # Drop NaN rows
-    METADATA_CENTROIDS_EXTRACTED = pd.DataFrame() # Empty dataframe for extracted data
+    csv = METADATA.copy()
+    del csv['Unnamed: 0']  # Delete unwanted column to save memory
+    csv = csv.dropna()  # Drop NaN rows
+    METADATA_CENTROIDS_EXTRACTED = pd.DataFrame()  # Empty dataframe for extracted data
 
     # Loop through datapoints
     for n, datapoint in tqdm.tqdm(METADATA.iterrows()):
